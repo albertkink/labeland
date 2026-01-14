@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { ChevronLeftIcon, EyeCloseIcon, EyeIcon } from "../../icons";
+import { ChevronLeftIcon } from "../../icons";
 import Label from "../form/Label";
 import Input from "../form/input/InputField";
 import Checkbox from "../form/input/Checkbox";
@@ -8,22 +8,38 @@ import Button from "../ui/button/Button";
 
 export default function SignInForm() {
   const navigate = useNavigate();
-  const [showPassword, setShowPassword] = useState(false);
   const [isChecked, setIsChecked] = useState(false);
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const [hash, setHash] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    
+    if (!hash.trim()) {
+      setError("Hash is required.");
+      setIsSubmitting(false);
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const r = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ hash: hash.trim() }),
+      }).catch((fetchError) => {
+        // Handle QUIC protocol errors and network errors
+        if (fetchError instanceof TypeError) {
+          const errorMsg = fetchError.message.toLowerCase();
+          if (errorMsg.includes("quic") || errorMsg.includes("protocol")) {
+            throw new Error("Connection error due to protocol mismatch. Please refresh the page and try again.");
+          } else if (errorMsg.includes("failed to fetch") || errorMsg.includes("network")) {
+            throw new Error("Unable to connect to server. Please check your connection and try again.");
+          }
+        }
+        throw fetchError;
       });
       const raw = await r.text();
       let data: unknown = null;
@@ -81,7 +97,7 @@ export default function SignInForm() {
               Sign In
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Enter your username and password to sign in!
+              Enter your hash to sign in!
             </p>
           </div>
           <div>
@@ -125,36 +141,14 @@ export default function SignInForm() {
               <div className="space-y-6">
                 <div>
                   <Label>
-                    Username <span className="text-error-500">*</span>{" "}
+                    Hash <span className="text-error-500">*</span>{" "}
                   </Label>
                   <Input
-                    placeholder="Enter your username"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
+                    type="text"
+                    placeholder="Enter your hash"
+                    value={hash}
+                    onChange={(e) => setHash(e.target.value)}
                   />
-                </div>
-                <div>
-                  <Label>
-                    Password <span className="text-error-500">*</span>{" "}
-                  </Label>
-                  <div className="relative">
-                    <Input
-                      type={showPassword ? "text" : "password"}
-                      placeholder="Enter your password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                    />
-                    <span
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute z-30 -translate-y-1/2 cursor-pointer right-4 top-1/2"
-                    >
-                      {showPassword ? (
-                        <EyeIcon className="fill-gray-500 dark:fill-gray-400 size-5" />
-                      ) : (
-                        <EyeCloseIcon className="fill-gray-500 dark:fill-gray-400 size-5" />
-                      )}
-                    </span>
-                  </div>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -163,12 +157,6 @@ export default function SignInForm() {
                       Keep me logged in
                     </span>
                   </div>
-                  <Link
-                    to="/reset-password"
-                    className="text-sm text-brand-500 hover:text-brand-600 dark:text-brand-400"
-                  >
-                    Forgot password?
-                  </Link>
                 </div>
                 <div>
                   <Button
