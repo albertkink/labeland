@@ -86,6 +86,14 @@ export default function SignUpForm() {
           data && typeof data === "object" && "error" in data
             ? String((data as { error?: unknown }).error)
             : `Sign up failed (HTTP ${r.status}).`;
+        
+        // If hash already exists, generate a new hash
+        if (msg.includes("Hash already exists")) {
+          const newHash = generateRandomHash();
+          setHash(newHash);
+          throw new Error("Hash conflict detected. A new hash has been generated. Please try again.");
+        }
+        
         throw new Error(msg);
       }
 
@@ -112,6 +120,8 @@ export default function SignUpForm() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign up failed.");
       setIsSubmitting(false);
+      // Don't reset hash if it was regenerated due to conflict
+      // The hash state is already updated in the error handler above
     }
   };
   return (
