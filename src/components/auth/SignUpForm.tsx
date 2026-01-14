@@ -52,7 +52,14 @@ export default function SignUpForm() {
           telegramUsername: telegramUsername.trim() || undefined,
           password 
         }),
+      }).catch((fetchError) => {
+        // Handle network errors (server not reachable, CORS, etc.)
+        if (fetchError instanceof TypeError && fetchError.message === "Failed to fetch") {
+          throw new Error("Unable to connect to server. Please make sure the backend server is running on port 5174.");
+        }
+        throw fetchError;
       });
+      
       const raw = await r.text();
       let data: unknown = null;
       try {
