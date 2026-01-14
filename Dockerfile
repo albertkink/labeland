@@ -61,5 +61,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
   CMD curl -f http://localhost:5174/api/health || exit 1
 
 # Start the Node/Express server
+# Express uses HTTP/1.1 by default, which prevents QUIC protocol errors
 # The server will serve the built React app from /dist and handle API routes
+# Express by default uses HTTP/1.1, which prevents QUIC protocol errors
 CMD ["node", "server/index.js"]
