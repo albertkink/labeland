@@ -111,7 +111,7 @@ export const initDatabase = async (maxRetries = 15, retryDelay = 3000) => {
             `Database connection refused. Check that:\n` +
             `1. DATABASE_URL is set correctly in Railway\n` +
             `2. PostgreSQL service is running\n` +
-            `3. Service name matches in variable reference (e.g., ${{Postgres.DATABASE_URL}})\n` +
+            `3. Service name matches in variable reference (e.g., ${url.hostname})\n` +
             `Original error: ${errorMessage}`
           );
         }
@@ -323,4 +323,5 @@ export const closePool = async () => {
 };
 
 export default pool;
+
 
