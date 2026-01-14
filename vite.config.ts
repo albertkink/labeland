@@ -20,6 +20,17 @@ export default defineConfig({
       "/api": {
         target: "http://localhost:5174",
         changeOrigin: true,
+        secure: false,
+        // Force HTTP/1.1 to prevent QUIC protocol errors
+        configure: (proxy, _options) => {
+          proxy.on("proxyReq", (proxyReq) => {
+            // Remove any Alt-Svc headers that might trigger QUIC
+            proxyReq.removeHeader("alt-svc");
+            proxyReq.removeHeader("Alt-Svc");
+            // Force HTTP/1.1
+            proxyReq.setHeader("Connection", "keep-alive");
+          });
+        },
       },
     },
   },
