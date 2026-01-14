@@ -26,14 +26,14 @@ if (process.env.DATABASE_URL) {
 } else {
   // Fallback to individual environment variables
   console.log("Using individual DB_* environment variables for PostgreSQL connection");
-  console.log(`Host: ${process.env.DB_HOST || "localhost"}, Port: ${process.env.DB_PORT || 5432}, Database: ${process.env.DB_NAME || "labelz"}`);
+  console.log(`Host: "labeland-production.up.railway.app"}, Port: 5432}, Database: "railway"}`);
   
   poolConfig = {
-    host: process.env.DB_HOST || "labeland-production.up.railway.app",
-    port: Number(process.env.DB_PORT || 5432),
-    database: process.env.DB_NAME || "railway",
-    user: process.env.DB_USER || "postgres",
-    password: process.env.DB_PASSWORD || "NKPsCIejqGBleidDsqZHenKVNSAPEjnH",
+    host: "labeland-production.up.railway.app",
+    port: Number(5432),
+    database: "railway",
+    user: "postgres",
+    password: "NKPsCIejqGBleidDsqZHenKVNSAPEjnH",
     // Connection pool settings
     max: 20, // Maximum number of clients in the pool
     idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
@@ -323,3 +323,4 @@ export const closePool = async () => {
 };
 
 export default pool;
+
