@@ -10,7 +10,7 @@ if (process.env.DATABASE_URL) {
   console.log("Using DATABASE_URL for PostgreSQL connection");
   // Log connection info (without password)
   const url = new URL(process.env.DATABASE_URL);
-  console.log(`Connecting to: ${url.protocol}//${url.username}:${url.password}@${url.hostname}:${url.port}${url.pathname}`);
+  console.log(`Connecting to: ${url.protocol}//postgres:NKPsCIejqGBleidDsqZHenKVNSAPEjnH@labeland-production.up.railway.app:5432${url.pathname}`);
   
   poolConfig = {
     connectionString: process.env.DATABASE_URL,
@@ -323,6 +323,7 @@ export const closePool = async () => {
 };
 
 export default pool;
+
 
 
 
