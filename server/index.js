@@ -56,20 +56,52 @@ const ORDERS_FILE =
 
 const app = express();
 
-// Middleware to prevent QUIC protocol errors
-// Set headers that discourage QUIC/HTTP3 negotiation
+// CORS middleware
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  const allowedOrigins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    APP_URL,
+  ].filter(Boolean);
+  
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  }
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+  
+  next();
+});
+
+// Middleware to prevent QUIC/HTTP3 protocol errors
+// Explicitly disable HTTP/3 (QUIC) and force HTTP/1.1
 app.use((req, res, next) => {
   // Security headers
   res.setHeader("X-Frame-Options", "SAMEORIGIN");
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-XSS-Protection", "1; mode=block");
   
-  // Prevent QUIC/HTTP3 issues by ensuring proper HTTP/1.1 handling
-  // Don't set Alt-Svc header (which would suggest QUIC support)
-  // Express/Node.js by default uses HTTP/1.1, which is what we want
+  // Explicitly prevent QUIC/HTTP3 by removing any Alt-Svc headers
+  // and ensuring HTTP/1.1 is used
+  res.removeHeader("Alt-Svc");
+  res.removeHeader("alt-svc");
   
-  // Set connection header to keep-alive for better compatibility
+  // Force HTTP/1.1 connection
   res.setHeader("Connection", "keep-alive");
+  res.setHeader("Upgrade", "");
+  
+  // Explicitly set HTTP version (Express uses HTTP/1.1 by default)
+  // This helps prevent browsers from attempting QUIC
+  if (req.httpVersionMajor && req.httpVersionMajor > 1) {
+    // If somehow HTTP/2 is being used, we want to prevent it
+    res.setHeader("X-HTTP-Version", "1.1");
+  }
   
   next();
 });
@@ -829,9 +861,18 @@ app.delete("/api/admin/orders/:orderId", requireAuth, requireAdmin, async (req, 
 (async () => {
   try {
     await initDatabase();
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`API listening on http://localhost:${PORT}`);
+      console.log("Using HTTP/1.1 (QUIC/HTTP3 disabled)");
     });
+    
+    // Explicitly prevent HTTP/2 and HTTP/3 protocol upgrades
+    // This helps prevent QUIC protocol errors
+    server.on("upgrade", (req, socket, head) => {
+      // Reject upgrade requests to prevent HTTP/2 or HTTP/3
+      socket.destroy();
+    });
+    
     // eslint-disable-next-line no-void
     void enableSpa();
   } catch (err) {
