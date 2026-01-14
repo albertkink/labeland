@@ -3,11 +3,11 @@ const { Pool } = pg;
 
 // PostgreSQL connection configuration
 const pool = new Pool({
-  host: process.env.DB_HOST || "localhost",
+  host: process.env.DB_HOST || "{{RAILWAY_PRIVATE_DOMAIN}}",
   port: Number(process.env.DB_PORT || 5432),
-  database: process.env.DB_NAME || "labelz",
-  user: process.env.DB_USER || "postgres",
-  password: process.env.DB_PASSWORD || "postgres",
+  database: process.env.DB_NAME || "{{PGDATABASE}}",
+  user: process.env.DB_USER || "${{PGUSER}}",
+  password: process.env.DB_PASSWORD || "${{POSTGRES_PASSWORD}}",
   // Connection pool settings
   max: 20, // Maximum number of clients in the pool
   idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
@@ -267,3 +267,4 @@ export const closePool = async () => {
 };
 
 export default pool;
+
