@@ -1,45 +1,24 @@
 import pg from "pg";
 const { Pool } = pg;
 
-// PostgreSQL connection configuration
-// Supports both DATABASE_URL (Railway format) and individual environment variables
-let poolConfig;
+// PostgreSQL connection configuration (hardcoded)
+const poolConfig = {
+  host: process.env.DB_HOST || "trolley.proxy.rlwy.net",
+  port: Number(process.env.DB_PORT || 48091),
+  database: process.env.DB_NAME || "railway",
+  user: process.env.DB_USER || "postgres",
+  password: process.env.DB_PASSWORD || "NKPsCIejqGBleidDsqZHenKVNSAPEjnH",
+  // Connection pool settings
+  max: 20, // Maximum number of clients in the pool
+  idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
+  connectionTimeoutMillis: 20000, // Increased timeout
+  // SSL is required for Railway's PostgreSQL
+  ssl: {
+    rejectUnauthorized: false, // Railway uses self-signed certificates
+  },
+};
 
-if (process.env.DATABASE_URL) {
-  // Use DATABASE_URL if provided (Railway, Heroku, etc.)
-  console.log("Using DATABASE_URL for PostgreSQL connection");
-  // Log connection info (without password)
-  const url = new URL(process.env.DATABASE_URL);
-  console.log(`Connecting to: ${url.protocol}//${url.username}@${url.hostname}:${url.port}${url.pathname}`);
-  
-  poolConfig = {
-    connectionString: process.env.DATABASE_URL,
-    // Connection pool settings
-    max: 20, // Maximum number of clients in the pool
-    idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
-    connectionTimeoutMillis: 20000, // Increased timeout for Railway (20 seconds)
-    // SSL is required for Railway's PostgreSQL (always enable for Railway)
-    ssl: {
-      rejectUnauthorized: false, // Railway uses self-signed certificates
-    },
-  };
-} else {
-  // Fallback to individual environment variables
-  console.log("Using individual DB_* environment variables for PostgreSQL connection");
-  console.log(`Host: ${process.env.DB_HOST || "trolley.proxy.rlwy.net"}, Port: ${process.env.DB_PORT || 48091}, Database: ${process.env.DB_NAME || "railway"}`);
-  
-  poolConfig = {
-    host: process.env.DB_HOST || "trolley.proxy.rlwy.net",
-    port: Number(process.env.DB_PORT || 48091),
-    database: process.env.DB_NAME || "railway",
-    user: process.env.DB_USER || "postgres",
-    password: process.env.DB_PASSWORD || "NKPsCIejqGBleidDsqZHenKVNSAPEjnH",
-    // Connection pool settings
-    max: 20, // Maximum number of clients in the pool
-    idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
-    connectionTimeoutMillis: 20000, // Increased timeout
-  };
-}
+console.log(`Connecting to PostgreSQL: ${poolConfig.user}@${poolConfig.host}:${poolConfig.port}/${poolConfig.database}`);
 
 const pool = new Pool(poolConfig);
 
@@ -109,9 +88,9 @@ export const initDatabase = async (maxRetries = 15, retryDelay = 3000) => {
         if (errorCode === "ECONNREFUSED") {
           throw new Error(
             `Database connection refused. Check that:\n` +
-            `1. DATABASE_URL is set correctly in Railway\n` +
+            `1. Database credentials are correct\n` +
             `2. PostgreSQL service is running\n` +
-            `3. Service name matches in variable reference (e.g., trolley.proxy.rlwy.net)\n` +
+            `3. Network connectivity is available\n` +
             `Original error: ${errorMessage}`
           );
         }
@@ -146,7 +125,35 @@ export const getAllUsers = async () => {
   }
 };
 
-// Get user by username (case-insensitive)
+// Get user by hash
+export const getUserByHash = async (hash) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, username, email, telegram_username as "telegramUsername", 
+              password_hash as "passwordHash", is_admin as "isAdmin", 
+              created_at as "createdAt", updated_at as "updatedAt"
+       FROM users WHERE password_hash = $1`,
+      [hash]
+    );
+    if (result.rows.length === 0) return null;
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      username: row.username,
+      email: row.email,
+      telegramUsername: row.telegramUsername,
+      passwordHash: row.passwordHash,
+      isAdmin: row.isAdmin,
+      createdAt: row.createdAt?.toISOString(),
+      updatedAt: row.updatedAt?.toISOString(),
+    };
+  } catch (err) {
+    console.error("Error getting user by hash:", err);
+    throw err;
+  }
+};
+
+// Get user by username (case-insensitive) - kept for backward compatibility
 export const getUserByUsername = async (username) => {
   try {
     const result = await pool.query(
@@ -214,13 +221,16 @@ export const createUser = async (userData) => {
       isAdmin = false,
     } = userData;
 
+    // For hash-based auth, if no username provided, use hash as username
+    const finalUsername = username || passwordHash.substring(0, 20) || "user";
+
     const result = await pool.query(
       `INSERT INTO users (id, username, email, telegram_username, password_hash, is_admin)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id, username, email, telegram_username as "telegramUsername", 
                  password_hash as "passwordHash", is_admin as "isAdmin", 
                  created_at as "createdAt", updated_at as "updatedAt"`,
-      [id, username, email || null, telegramUsername || null, passwordHash, isAdmin]
+      [id, finalUsername, email || null, telegramUsername || null, passwordHash, isAdmin]
     );
 
     const row = result.rows[0];
@@ -323,4 +333,3 @@ export const closePool = async () => {
 };
 
 export default pool;
-
