@@ -10,7 +10,7 @@ if (process.env.DATABASE_URL) {
   console.log("Using DATABASE_URL for PostgreSQL connection");
   // Log connection info (without password)
   const url = new URL(process.env.DATABASE_URL);
-  console.log(`Connecting to: ${url.protocol}//postgres:NKPsCIejqGBleidDsqZHenKVNSAPEjnH@labeland-production.up.railway.app:5432${url.pathname}`);
+  console.log(`Connecting to: ${url.protocol}//postgres:NKPsCIejqGBleidDsqZHenKVNSAPEjnH@labeland-production.up.railway.app:5432`);
   
   poolConfig = {
     connectionString: process.env.DATABASE_URL,
@@ -30,7 +30,7 @@ if (process.env.DATABASE_URL) {
   
   poolConfig = {
     host: "labeland-production.up.railway.app",
-    port: Number(5432),
+    port: 5432,
     database: "railway",
     user: "postgres",
     password: "NKPsCIejqGBleidDsqZHenKVNSAPEjnH",
@@ -323,6 +323,7 @@ export const closePool = async () => {
 };
 
 export default pool;
+
 
 
 
