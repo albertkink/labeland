@@ -10,7 +10,7 @@ if (process.env.DATABASE_URL) {
   console.log("Using DATABASE_URL for PostgreSQL connection");
   // Log connection info (without password)
   const url = new URL(process.env.DATABASE_URL);
-  console.log(`Connecting to: ${url.protocol}//postgres:NKPsCIejqGBleidDsqZHenKVNSAPEjnH@labeland-production.up.railway.app:5432`);
+  console.log(`Connecting to: ${url.protocol}//${url.username}@${url.hostname}:${url.port}${url.pathname}`);
   
   poolConfig = {
     connectionString: process.env.DATABASE_URL,
@@ -26,14 +26,14 @@ if (process.env.DATABASE_URL) {
 } else {
   // Fallback to individual environment variables
   console.log("Using individual DB_* environment variables for PostgreSQL connection");
-  console.log(`Host: "labeland-production.up.railway.app", Port: 5432, Database: "railway"`);
+  console.log(`Host: ${process.env.DB_HOST || "trolley.proxy.rlwy.net"}, Port: ${process.env.DB_PORT || 48091}, Database: ${process.env.DB_NAME || "railway"}`);
   
   poolConfig = {
-    host: "labeland-production.up.railway.app",
-    port: 5432,
-    database: "railway",
-    user: "postgres",
-    password: "NKPsCIejqGBleidDsqZHenKVNSAPEjnH",
+    host: process.env.DB_HOST || "trolley.proxy.rlwy.net",
+    port: Number(process.env.DB_PORT || 48091),
+    database: process.env.DB_NAME || "railway",
+    user: process.env.DB_USER || "postgres",
+    password: process.env.DB_PASSWORD || "NKPsCIejqGBleidDsqZHenKVNSAPEjnH",
     // Connection pool settings
     max: 20, // Maximum number of clients in the pool
     idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
@@ -111,7 +111,7 @@ export const initDatabase = async (maxRetries = 15, retryDelay = 3000) => {
             `Database connection refused. Check that:\n` +
             `1. DATABASE_URL is set correctly in Railway\n` +
             `2. PostgreSQL service is running\n` +
-            `3. Service name matches in variable reference (e.g., ${url.hostname})\n` +
+            `3. Service name matches in variable reference (e.g., ${{Postgres.DATABASE_URL}})\n` +
             `Original error: ${errorMessage}`
           );
         }
@@ -323,9 +323,3 @@ export const closePool = async () => {
 };
 
 export default pool;
-
-
-
-
-
-
