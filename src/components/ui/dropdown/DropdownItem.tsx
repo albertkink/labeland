@@ -26,13 +26,20 @@ export const DropdownItem: React.FC<DropdownItemProps> = ({
     if (tag === "button") {
       event.preventDefault();
     }
+    // Don't prevent default for links - let React Router handle navigation
     if (onClick) onClick();
     if (onItemClick) onItemClick();
   };
 
   if (tag === "a" && to) {
     return (
-      <Link to={to} className={combinedClasses} onClick={handleClick}>
+      <Link 
+        to={to} 
+        className={combinedClasses} 
+        onClick={handleClick}
+        // Ensure link is properly rendered
+        role="link"
+      >
         {children}
       </Link>
     );
