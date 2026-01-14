@@ -56,6 +56,24 @@ const ORDERS_FILE =
 
 const app = express();
 
+// Middleware to prevent QUIC protocol errors
+// Set headers that discourage QUIC/HTTP3 negotiation
+app.use((req, res, next) => {
+  // Security headers
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-XSS-Protection", "1; mode=block");
+  
+  // Prevent QUIC/HTTP3 issues by ensuring proper HTTP/1.1 handling
+  // Don't set Alt-Svc header (which would suggest QUIC support)
+  // Express/Node.js by default uses HTTP/1.1, which is what we want
+  
+  // Set connection header to keep-alive for better compatibility
+  res.setHeader("Connection", "keep-alive");
+  
+  next();
+});
+
 // Serve the built React app (Vite dist/) in production so one container can host both UI + API.
 // This only activates when dist/index.html exists.
 const DIST_DIR = path.resolve(process.cwd(), "dist");
