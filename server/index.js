@@ -62,6 +62,8 @@ app.use((req, res, next) => {
   const allowedOrigins = [
     "http://localhost:5173",
     "http://localhost:3000",
+    "https://label.land",
+    "http://label.land",
     APP_URL,
   ].filter(Boolean);
   
@@ -87,21 +89,24 @@ app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-XSS-Protection", "1; mode=block");
   
-  // Explicitly prevent QUIC/HTTP3 by removing any Alt-Svc headers
-  // and ensuring HTTP/1.1 is used
+  // CRITICAL: Explicitly prevent QUIC/HTTP3 by removing any Alt-Svc headers
+  // Alt-Svc headers advertise HTTP/3 support, which causes browsers to try QUIC
   res.removeHeader("Alt-Svc");
   res.removeHeader("alt-svc");
+  res.removeHeader("Alt-SVC");
   
-  // Force HTTP/1.1 connection
+  // Force HTTP/1.1 connection - prevent protocol upgrades
   res.setHeader("Connection", "keep-alive");
   res.setHeader("Upgrade", "");
   
-  // Explicitly set HTTP version (Express uses HTTP/1.1 by default)
-  // This helps prevent browsers from attempting QUIC
-  if (req.httpVersionMajor && req.httpVersionMajor > 1) {
-    // If somehow HTTP/2 is being used, we want to prevent it
-    res.setHeader("X-HTTP-Version", "1.1");
-  }
+  // Explicitly indicate we only support HTTP/1.1
+  // This helps prevent browsers from attempting QUIC/HTTP3
+  res.setHeader("X-Protocol-Version", "HTTP/1.1");
+  
+  // Remove any HTTP/2 or HTTP/3 related headers that might trigger QUIC
+  res.removeHeader("HTTP2-Settings");
+  res.removeHeader("h2");
+  res.removeHeader("h3");
   
   next();
 });
@@ -114,18 +119,59 @@ const enableSpa = async () => {
   try {
     await fs.stat(path.join(DIST_DIR, "index.html"));
   } catch {
+    console.log("dist/index.html not found, skipping SPA serving");
     return;
   }
 
-  app.use(express.static(DIST_DIR));
+  console.log("Enabling SPA static file serving from:", DIST_DIR);
+  
+  // Serve static files (JS, CSS, images, etc.) from dist folder
+  // Cache static assets but NOT index.html
+  app.use(express.static(DIST_DIR, {
+    maxAge: "1y", // Cache static assets for 1 year
+    etag: true,
+    lastModified: true,
+    // Don't cache index.html - it needs to be fresh for SPA routing
+    setHeaders: (res, path) => {
+      if (path.endsWith("index.html")) {
+        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+        res.setHeader("Pragma", "no-cache");
+        res.setHeader("Expires", "0");
+      }
+    },
+  }));
+  
   // SPA fallback: all non-API routes should serve index.html.
-  app.get(/^\/(?!api\/).*/, (_req, res) => {
-    res.sendFile(path.join(DIST_DIR, "index.html"));
+  // This MUST be after all API routes are defined
+  // Match any route that doesn't start with /api
+  app.get(/^\/(?!api\/).*/, (req, res) => {
+    console.log(`SPA fallback: serving index.html for ${req.path}`);
+    // Always send fresh index.html (no cache)
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.sendFile(path.join(DIST_DIR, "index.html"), (err) => {
+      if (err) {
+        console.error("Error serving index.html:", err);
+        res.status(500).send("Error loading application");
+      }
+    });
   });
 };
 
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true });
+  res.json({ ok: true, protocol: "HTTP/1.1", quic: false });
+});
+
+// Test endpoint to verify QUIC prevention
+app.get("/api/test", (_req, res) => {
+  res.json({ 
+    ok: true, 
+    message: "Server is running",
+    protocol: "HTTP/1.1",
+    quicEnabled: false,
+    timestamp: new Date().toISOString()
+  });
 });
 
 const safeJsonParse = (raw) => {
