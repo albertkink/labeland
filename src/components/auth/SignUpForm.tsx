@@ -6,10 +6,20 @@ import Input from "../form/input/InputField";
 import Checkbox from "../form/input/Checkbox";
 import Button from "../ui/button/Button";
 
+// Generate a random hash (64 characters)
+function generateRandomHash(): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let hash = "";
+  for (let i = 0; i < 64; i++) {
+    hash += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return hash;
+}
+
 export default function SignUpForm() {
   const navigate = useNavigate();
   const [isChecked, setIsChecked] = useState(false);
-  const [hash, setHash] = useState("");
+  const [generatedHash, setGeneratedHash] = useState<string | null>(null);
   const [telegramUsername, setTelegramUsername] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -18,20 +28,14 @@ export default function SignUpForm() {
     e.preventDefault();
     setError(null);
 
-    if (!hash.trim()) {
-      setError("Hash is required.");
-      return;
-    }
-
-    if (hash.trim().length < 16) {
-      setError("Hash must be at least 16 characters.");
-      return;
-    }
-
     if (!isChecked) {
       setError("You must accept the Terms and Conditions.");
       return;
     }
+
+    // Generate a random hash
+    const hash = generateRandomHash();
+    setGeneratedHash(hash);
 
     setIsSubmitting(true);
     try {
@@ -39,7 +43,7 @@ export default function SignUpForm() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
-          hash: hash.trim(), 
+          hash: hash, 
           telegramUsername: telegramUsername.trim() || undefined
         }),
       }).catch((fetchError) => {
@@ -86,8 +90,16 @@ export default function SignUpForm() {
       localStorage.setItem("auth.token", token);
       if (user) localStorage.setItem("auth.user", JSON.stringify(user));
       localStorage.setItem("auth.keep", "1");
+      
+      // Store the hash in localStorage so user can access it later
+      if (generatedHash) {
+        localStorage.setItem("auth.generatedHash", generatedHash);
+      }
 
-      navigate("/");
+      // Show hash for 3 seconds before navigating
+      setTimeout(() => {
+        navigate("/");
+      }, 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign up failed.");
       setIsSubmitting(false);
@@ -111,7 +123,7 @@ export default function SignUpForm() {
               Sign Up
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Enter your hash to sign up!
+              Create your account! A unique hash will be generated for you.
             </p>
           </div>
           <div>
@@ -153,20 +165,31 @@ export default function SignUpForm() {
                 </div>
               ) : null}
               <div className="space-y-5">
-                {/* <!-- Hash --> */}
-                <div>
-                  <Label>
-                    Hash<span className="text-error-500">*</span>
-                  </Label>
-                  <Input
-                    type="text"
-                    id="hash"
-                    name="hash"
-                    placeholder="Enter your hash"
-                    value={hash}
-                    onChange={(e) => setHash(e.target.value)}
-                  />
-                </div>
+                {/* <!-- Generated Hash Display (after signup) --> */}
+                {generatedHash && (
+                  <div className="mb-4 rounded-lg border border-brand-500/30 bg-brand-500/10 px-4 py-3">
+                    <p className="text-sm font-semibold text-brand-700 dark:text-brand-400 mb-2">
+                      Your unique hash (save this!):
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 p-2 bg-gray-100 dark:bg-gray-800 rounded text-xs font-mono break-all">
+                        {generatedHash}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(generatedHash);
+                        }}
+                        className="px-3 py-1 text-xs bg-brand-500 text-white rounded hover:bg-brand-600"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
+                      ⚠️ Save this hash! You'll need it to sign in.
+                    </p>
+                  </div>
+                )}
                 {/* <!-- Telegram or Signal Username --> */}
                 <div>
                   <Label>
