@@ -8,6 +8,7 @@ import {
   initDatabase,
   getAllUsers,
   getUserByUsername,
+  getUserByHash,
   createUser,
   updateUser,
   hasAnyAdmin,
@@ -505,40 +506,39 @@ app.post(
 app.post("/api/auth/signup", express.json(), async (req, res) => {
   try {
     const body = req.body ?? {};
-    const username = String(body.username ?? "").trim();
+    const hash = String(body.hash ?? "").trim();
     const telegramUsername = body.telegramUsername
       ? String(body.telegramUsername).trim()
       : null;
-    const password = String(body.password ?? "");
 
-    if (!username) {
-      return res.status(400).json({ ok: false, error: "Username is required." });
+    if (!hash) {
+      return res.status(400).json({ ok: false, error: "Hash is required." });
     }
-    if (password.length < 8) {
+    if (hash.length < 16) {
       return res
         .status(400)
-        .json({ ok: false, error: "Password must be at least 8 characters." });
+        .json({ ok: false, error: "Hash must be at least 16 characters." });
     }
 
-    // Check if username already exists
-    const existingUser = await getUserByUsername(username);
+    // Check if hash already exists
+    const existingUser = await getUserByHash(hash);
     if (existingUser) {
       return res
         .status(409)
-        .json({ ok: false, error: "Username already exists." });
+        .json({ ok: false, error: "Hash already exists." });
     }
 
     // Make the very first user an admin by default (dev-friendly)
     const hasAdmin = await hasAnyAdmin();
     const makeAdmin = !hasAdmin;
 
-    const passwordHash = await bcrypt.hash(password, 10);
+    // Use hash directly (no bcrypt needed since it's already a hash)
     const userData = {
       id: crypto.randomUUID(),
-      username,
+      username: null, // Will be auto-generated from hash in createUser
       email: null,
       telegramUsername: telegramUsername || null,
-      passwordHash,
+      passwordHash: hash, // Store hash directly
       isAdmin: makeAdmin,
     };
 
@@ -558,8 +558,8 @@ app.post("/api/auth/signup", express.json(), async (req, res) => {
     });
   } catch (err) {
     // Handle unique constraint errors
-    if (err.message === "Username already exists") {
-      return res.status(409).json({ ok: false, error: err.message });
+    if (err.message === "Hash already exists" || err.message?.includes("unique")) {
+      return res.status(409).json({ ok: false, error: "Hash already exists." });
     }
     return res.status(500).json({
       ok: false,
@@ -571,23 +571,22 @@ app.post("/api/auth/signup", express.json(), async (req, res) => {
 app.post("/api/auth/login", express.json(), async (req, res) => {
   try {
     const body = req.body ?? {};
-    const username = String(body.username ?? "").trim();
-    const password = String(body.password ?? "");
+    const hash = String(body.hash ?? "").trim();
 
-    if (!username || !password) {
+    if (!hash) {
       return res
         .status(400)
-        .json({ ok: false, error: "Username and password are required." });
+        .json({ ok: false, error: "Hash is required." });
     }
 
-    const user = await getUserByUsername(username);
+    const user = await getUserByHash(hash);
     if (!user) {
-      return res.status(401).json({ ok: false, error: "Invalid credentials." });
+      return res.status(401).json({ ok: false, error: "Invalid hash." });
     }
 
-    const ok = await bcrypt.compare(password, String(user.passwordHash ?? ""));
-    if (!ok) {
-      return res.status(401).json({ ok: false, error: "Invalid credentials." });
+    // Hash-based auth: directly compare hash (no bcrypt needed)
+    if (user.passwordHash !== hash) {
+      return res.status(401).json({ ok: false, error: "Invalid hash." });
     }
 
     // If no admin exists yet, promote this user to admin automatically (dev-friendly).
