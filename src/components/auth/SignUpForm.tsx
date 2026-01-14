@@ -91,8 +91,9 @@ export default function SignUpForm() {
         if (msg.includes("Hash already exists")) {
           const newHash = generateRandomHash();
           setHash(newHash);
-          // Don't throw error, just show info message and let user retry
-          setError("This hash was already used. A new hash has been generated automatically. Click 'Sign Up' again.");
+          // Show info message - user needs to click Sign Up again with the new hash
+          // The new hash will be saved to PostgreSQL when they click Sign Up again
+          setError("This hash was already used. A new hash has been generated and is ready. Click 'Sign Up' again to register with the new hash.");
           setIsSubmitting(false);
           return;
         }
@@ -151,7 +152,11 @@ export default function SignUpForm() {
           <div>
             <form onSubmit={handleSubmit}>
               {error ? (
-                <div className="mb-4 rounded-lg border border-error-500/30 bg-error-500/10 px-4 py-3 text-sm text-error-700 dark:text-error-400">
+                <div className={`mb-4 rounded-lg border px-4 py-3 text-sm ${
+                  error.includes("new hash has been generated") 
+                    ? "border-brand-500/30 bg-brand-500/10 text-brand-700 dark:text-brand-400" 
+                    : "border-error-500/30 bg-error-500/10 text-error-700 dark:text-error-400"
+                }`}>
                   {error}
                 </div>
               ) : null}
