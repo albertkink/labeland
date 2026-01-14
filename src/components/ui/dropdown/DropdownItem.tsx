@@ -26,9 +26,15 @@ export const DropdownItem: React.FC<DropdownItemProps> = ({
     if (tag === "button") {
       event.preventDefault();
     }
-    // Don't prevent default for links - let React Router handle navigation
+    // For links, don't prevent default - let React Router handle navigation
+    // Call callbacks but don't interfere with navigation
     if (onClick) onClick();
-    if (onItemClick) onItemClick();
+    if (onItemClick) {
+      // Small delay to ensure navigation happens first
+      setTimeout(() => {
+        onItemClick();
+      }, 0);
+    }
   };
 
   if (tag === "a" && to) {
@@ -37,8 +43,9 @@ export const DropdownItem: React.FC<DropdownItemProps> = ({
         to={to} 
         className={combinedClasses} 
         onClick={handleClick}
-        // Ensure link is properly rendered
+        // Ensure link is properly rendered and accessible
         role="link"
+        aria-label={typeof children === "string" ? children : undefined}
       >
         {children}
       </Link>
