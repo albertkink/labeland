@@ -26,7 +26,7 @@ if (process.env.DATABASE_URL) {
 } else {
   // Fallback to individual environment variables
   console.log("Using individual DB_* environment variables for PostgreSQL connection");
-  console.log(`Host: "labeland-production.up.railway.app"}, Port: 5432}, Database: "railway"}`);
+  console.log(`Host: "labeland-production.up.railway.app", Port: 5432, Database: "railway"`);
   
   poolConfig = {
     host: "labeland-production.up.railway.app",
@@ -323,6 +323,7 @@ export const closePool = async () => {
 };
 
 export default pool;
+
 
 
 
