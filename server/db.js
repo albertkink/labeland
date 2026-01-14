@@ -7,27 +7,37 @@ let poolConfig;
 
 if (process.env.DATABASE_URL) {
   // Use DATABASE_URL if provided (Railway, Heroku, etc.)
+  console.log("Using DATABASE_URL for PostgreSQL connection");
+  // Log connection info (without password)
+  const url = new URL(process.env.DATABASE_URL);
+  console.log(`Connecting to: ${url.protocol}//${url.username}@${url.hostname}:${url.port}${url.pathname}`);
+  
   poolConfig = {
     connectionString: process.env.DATABASE_URL,
     // Connection pool settings
     max: 20, // Maximum number of clients in the pool
     idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
-    connectionTimeoutMillis: 10000, // Return an error after 10 seconds if connection could not be established
-    // SSL is required for Railway's PostgreSQL
-    ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+    connectionTimeoutMillis: 20000, // Increased timeout for Railway (20 seconds)
+    // SSL is required for Railway's PostgreSQL (always enable for Railway)
+    ssl: {
+      rejectUnauthorized: false, // Railway uses self-signed certificates
+    },
   };
 } else {
   // Fallback to individual environment variables
+  console.log("Using individual DB_* environment variables for PostgreSQL connection");
+  console.log(`Host: ${process.env.DB_HOST || "localhost"}, Port: ${process.env.DB_PORT || 5432}, Database: ${process.env.DB_NAME || "labelz"}`);
+  
   poolConfig = {
-    host: process.env.DB_HOST || "localhost",
+    host: process.env.DB_HOST || "labeland-production.up.railway.app",
     port: Number(process.env.DB_PORT || 5432),
-    database: process.env.DB_NAME || "labelz",
+    database: process.env.DB_NAME || "railway",
     user: process.env.DB_USER || "postgres",
-    password: process.env.DB_PASSWORD || "postgres",
+    password: process.env.DB_PASSWORD || "NKPsCIejqGBleidDsqZHenKVNSAPEjnH",
     // Connection pool settings
     max: 20, // Maximum number of clients in the pool
     idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
-    connectionTimeoutMillis: 10000, // Return an error after 10 seconds if connection could not be established
+    connectionTimeoutMillis: 20000, // Increased timeout
   };
 }
 
@@ -44,10 +54,13 @@ pool.on("error", (err) => {
 });
 
 // Initialize database - create users table if it doesn't exist
-// Retries connection if PostgreSQL isn't ready yet (useful for Docker)
-export const initDatabase = async (maxRetries = 10, retryDelay = 2000) => {
+// Retries connection if PostgreSQL isn't ready yet (useful for Docker/Railway)
+export const initDatabase = async (maxRetries = 15, retryDelay = 3000) => {
+  console.log(`Initializing database (max ${maxRetries} attempts, ${retryDelay}ms delay)...`);
+  
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
+      console.log(`Database connection attempt ${attempt}/${maxRetries}...`);
       const client = await pool.connect();
       try {
         await client.query(`
@@ -65,19 +78,43 @@ export const initDatabase = async (maxRetries = 10, retryDelay = 2000) => {
           CREATE INDEX IF NOT EXISTS idx_users_username ON users(LOWER(username));
           CREATE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL;
         `);
-        console.log("Database initialized successfully");
+        console.log("✅ Database initialized successfully");
         return;
       } finally {
         client.release();
       }
     } catch (err) {
+      const errorMessage = err.message || String(err);
+      const errorCode = err.code || "UNKNOWN";
+      
+      console.error(`❌ Database connection attempt ${attempt}/${maxRetries} failed:`);
+      console.error(`   Error: ${errorMessage}`);
+      console.error(`   Code: ${errorCode}`);
+      
       if (attempt < maxRetries) {
-        console.log(
-          `Database connection attempt ${attempt}/${maxRetries} failed, retrying in ${retryDelay}ms...`,
-        );
+        console.log(`   Retrying in ${retryDelay}ms...`);
         await new Promise((resolve) => setTimeout(resolve, retryDelay));
       } else {
-        console.error("Error initializing database after retries:", err);
+        console.error("❌ Error initializing database after all retries");
+        console.error("Full error details:", {
+          message: err.message,
+          code: err.code,
+          syscall: err.syscall,
+          address: err.address,
+          port: err.port,
+          stack: err.stack,
+        });
+        
+        // Provide helpful error message
+        if (errorCode === "ECONNREFUSED") {
+          throw new Error(
+            `Database connection refused. Check that:\n` +
+            `1. DATABASE_URL is set correctly in Railway\n` +
+            `2. PostgreSQL service is running\n` +
+            `3. Service name matches in variable reference (e.g., ${{Postgres.DATABASE_URL}})\n` +
+            `Original error: ${errorMessage}`
+          );
+        }
         throw err;
       }
     }
