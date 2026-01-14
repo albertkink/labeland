@@ -2,17 +2,36 @@ import pg from "pg";
 const { Pool } = pg;
 
 // PostgreSQL connection configuration
-const pool = new Pool({
-  host: process.env.DB_HOST || "{{RAILWAY_PRIVATE_DOMAIN}}",
-  port: Number(process.env.DB_PORT || 5432),
-  database: process.env.DB_NAME || "{{PGDATABASE}}",
-  user: process.env.DB_USER || "${{PGUSER}}",
-  password: process.env.DB_PASSWORD || "${{POSTGRES_PASSWORD}}",
-  // Connection pool settings
-  max: 20, // Maximum number of clients in the pool
-  idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
-  connectionTimeoutMillis: 10000, // Return an error after 10 seconds if connection could not be established
-});
+// Supports both DATABASE_URL (Railway format) and individual environment variables
+let poolConfig;
+
+if (process.env.DATABASE_URL) {
+  // Use DATABASE_URL if provided (Railway, Heroku, etc.)
+  poolConfig = {
+    connectionString: process.env.DATABASE_URL,
+    // Connection pool settings
+    max: 20, // Maximum number of clients in the pool
+    idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
+    connectionTimeoutMillis: 10000, // Return an error after 10 seconds if connection could not be established
+    // SSL is required for Railway's PostgreSQL
+    ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+  };
+} else {
+  // Fallback to individual environment variables
+  poolConfig = {
+    host: process.env.DB_HOST || "localhost",
+    port: Number(process.env.DB_PORT || 5432),
+    database: process.env.DB_NAME || "labelz",
+    user: process.env.DB_USER || "postgres",
+    password: process.env.DB_PASSWORD || "postgres",
+    // Connection pool settings
+    max: 20, // Maximum number of clients in the pool
+    idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
+    connectionTimeoutMillis: 10000, // Return an error after 10 seconds if connection could not be established
+  };
+}
+
+const pool = new Pool(poolConfig);
 
 // Test the connection
 pool.on("connect", () => {
@@ -267,4 +286,3 @@ export const closePool = async () => {
 };
 
 export default pool;
-
