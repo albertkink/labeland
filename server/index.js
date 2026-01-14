@@ -507,6 +507,7 @@ app.post("/api/auth/signup", express.json(), async (req, res) => {
   try {
     const body = req.body ?? {};
     const hash = String(body.hash ?? "").trim();
+    const username = String(body.username ?? "").trim();
     const telegramUsername = body.telegramUsername
       ? String(body.telegramUsername).trim()
       : null;
@@ -533,9 +534,12 @@ app.post("/api/auth/signup", express.json(), async (req, res) => {
     const makeAdmin = !hasAdmin;
 
     // Use hash directly (no bcrypt needed since it's already a hash)
+    // Use provided username or generate one from hash
+    const finalUsername = username || hash.substring(0, 20) || "user";
+
     const userData = {
       id: crypto.randomUUID(),
-      username: null, // Will be auto-generated from hash in createUser
+      username: finalUsername,
       email: null,
       telegramUsername: telegramUsername || null,
       passwordHash: hash, // Store hash directly
