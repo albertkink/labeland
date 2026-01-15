@@ -1,14 +1,42 @@
 import pg from "pg";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 const { Pool } = pg;
+
+// Get current directory for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load database configuration from config.json
+let dbConfig = {};
+try {
+  const configPath = path.join(__dirname, "config.json");
+  const configFile = fs.readFileSync(configPath, "utf8");
+  dbConfig = JSON.parse(configFile);
+  console.log("Loaded database configuration from config.json");
+} catch (err) {
+  console.error("Error loading config.json, using defaults:", err.message);
+  // Fallback to defaults if config.json doesn't exist
+  dbConfig = {
+    DATABASE_URL: "postgresql://postgres:mqFLESHQSGehnsyWSsELHXtCFigBlaTx@trolley.proxy.rlwy.net:48091/railway",
+    PGHOST: "trolley.proxy.rlwy.net",
+    PGPORT: "48091",
+    PGDATABASE: "railway",
+    PGUSER: "postgres",
+    PGPASSWORD: "mqFLESHQSGehnsyWSsELHXtCFigBlaTx",
+  };
+}
 
 // PostgreSQL connection configuration
 let poolConfig;
 
-if (process.env.DATABASE_URL) {
-  // Use DATABASE_URL if provided (takes precedence)
-  console.log("Using DATABASE_URL for PostgreSQL connection");
+if (dbConfig.DATABASE_URL) {
+  // Use DATABASE_URL from config.json
+  console.log("Using DATABASE_URL from config.json for PostgreSQL connection");
   poolConfig = {
-    connectionString: process.env.DATABASE_URL,
+    connectionString: dbConfig.DATABASE_URL,
     max: 20,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 20000,
@@ -18,19 +46,19 @@ if (process.env.DATABASE_URL) {
   };
   // Log connection info (without password)
   try {
-    const url = new URL(process.env.DATABASE_URL);
+    const url = new URL(dbConfig.DATABASE_URL);
     console.log(`Connecting to: ${url.protocol}//${url.username}@${url.hostname}:${url.port}${url.pathname}`);
   } catch (e) {
     console.log("Using DATABASE_URL (format not parseable)");
   }
 } else {
-  // Use hardcoded values or environment variables
+  // Use individual values from config.json
   poolConfig = {
-    host: process.env.DB_HOST || "trolley.proxy.rlwy.net",
-    port: Number(process.env.DB_PORT || 48091),
-    database: process.env.DB_NAME || "railway",
-    user: process.env.DB_USER || "postgres",
-    password: process.env.DB_PASSWORD || "NKPsCIejqGBleidDsqZHenKVNSAPEjnH",
+    host: dbConfig.PGHOST || dbConfig.POSTGRES_HOST || "trolley.proxy.rlwy.net",
+    port: Number(dbConfig.PGPORT || dbConfig.POSTGRES_PORT || 48091),
+    database: dbConfig.PGDATABASE || dbConfig.POSTGRES_DB || "railway",
+    user: dbConfig.PGUSER || dbConfig.POSTGRES_USER || "postgres",
+    password: dbConfig.PGPASSWORD || dbConfig.POSTGRES_PASSWORD || "mqFLESHQSGehnsyWSsELHXtCFigBlaTx",
     // Connection pool settings
     max: 20, // Maximum number of clients in the pool
     idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
@@ -153,9 +181,14 @@ export const getUserByHash = async (hash) => {
   try {
     const trimmedHash = String(hash).trim();
     console.log(`[getUserByHash] Checking for hash: ${trimmedHash.substring(0, 20)}... (length: ${trimmedHash.length})`);
-    const dbInfo = poolConfig.connectionString 
-      ? `DATABASE_URL (${new URL(poolConfig.connectionString).pathname.replace('/', '')})`
-      : `${poolConfig.database}@${poolConfig.host}:${poolConfig.port}`;
+    let dbInfo;
+    try {
+      dbInfo = poolConfig.connectionString 
+        ? `DATABASE_URL (${new URL(poolConfig.connectionString).pathname.replace('/', '')})`
+        : `${poolConfig.database || 'unknown'}@${poolConfig.host || 'unknown'}:${poolConfig.port || 'unknown'}`;
+    } catch (e) {
+      dbInfo = "config.json";
+    }
     console.log(`[getUserByHash] Database: ${dbInfo}`);
     
     // First, let's see ALL hashes in the database for debugging
@@ -275,9 +308,14 @@ export const createUser = async (userData) => {
     const trimmedHash = String(passwordHash).trim();
     
     console.log(`[createUser] Creating user with:`);
-    const dbInfo = poolConfig.connectionString 
-      ? `DATABASE_URL (${new URL(poolConfig.connectionString).pathname.replace('/', '')})`
-      : `${poolConfig.database}@${poolConfig.host}:${poolConfig.port}`;
+    let dbInfo;
+    try {
+      dbInfo = poolConfig.connectionString 
+        ? `DATABASE_URL (${new URL(poolConfig.connectionString).pathname.replace('/', '')})`
+        : `${poolConfig.database || 'unknown'}@${poolConfig.host || 'unknown'}:${poolConfig.port || 'unknown'}`;
+    } catch (e) {
+      dbInfo = "config.json";
+    }
     console.log(`  - Database: ${dbInfo}`);
     console.log(`  - Username: ${finalUsername}`);
     console.log(`  - Hash: ${trimmedHash.substring(0, 20)}... (length: ${trimmedHash.length})`);
