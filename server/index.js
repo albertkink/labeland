@@ -546,25 +546,36 @@ app.post("/api/auth/signup", express.json(), async (req, res) => {
       isAdmin: makeAdmin,
     };
 
-    const user = await createUser(userData);
+    try {
+      const user = await createUser(userData);
 
-    const token = issueToken(user);
-    return res.json({
-      ok: true,
-      token,
-      user: {
-        id: user.id,
-        username: user.username,
-        email: null,
-        telegramUsername: user.telegramUsername || null,
-        isAdmin: Boolean(user.isAdmin),
-      },
-    });
-  } catch (err) {
-    // Handle unique constraint errors
-    if (err.message === "Hash already exists" || err.message?.includes("unique")) {
-      return res.status(409).json({ ok: false, error: "Hash already exists." });
+      const token = issueToken(user);
+      return res.json({
+        ok: true,
+        token,
+        user: {
+          id: user.id,
+          username: user.username,
+          email: null,
+          telegramUsername: user.telegramUsername || null,
+          isAdmin: Boolean(user.isAdmin),
+        },
+      });
+    } catch (createErr) {
+      // Handle errors from createUser - it already throws specific errors
+      if (createErr.message === "Username already exists") {
+        return res.status(409).json({ ok: false, error: "Username already exists. Please try again." });
+      }
+      if (createErr.message === "Email already exists") {
+        return res.status(409).json({ ok: false, error: "Email already exists." });
+      }
+      // Re-throw to outer catch
+      throw createErr;
     }
+  } catch (err) {
+    // Only catch hash conflicts here (shouldn't happen since we check before createUser)
+    // But handle any other unexpected errors
+    console.error("Signup error:", err);
     return res.status(500).json({
       ok: false,
       error: err instanceof Error ? err.message : "Unknown error",
