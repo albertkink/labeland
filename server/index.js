@@ -632,13 +632,23 @@ app.post("/api/auth/login", express.json(), async (req, res) => {
         .json({ ok: false, error: "Hash is required." });
     }
 
+    console.log(`[login] Attempting login with hash: ${hash.substring(0, 20)}... (length: ${hash.length})`);
+    
     const user = await getUserByHash(hash);
     if (!user) {
+      console.log(`[login] No user found with hash: ${hash.substring(0, 20)}...`);
       return res.status(401).json({ ok: false, error: "Invalid hash." });
     }
 
+    console.log(`[login] User found: ${user.username} (id: ${user.id})`);
+    console.log(`[login] Comparing hashes - provided: ${hash.substring(0, 20)}... vs stored: ${user.passwordHash?.substring(0, 20)}...`);
+    console.log(`[login] Hash match: ${user.passwordHash === hash}`);
+
     // Hash-based auth: directly compare hash (no bcrypt needed)
-    if (user.passwordHash !== hash) {
+    const storedHash = String(user.passwordHash || "").trim();
+    const providedHash = hash.trim();
+    if (storedHash !== providedHash) {
+      console.log(`[login] Hash mismatch - stored length: ${storedHash.length}, provided length: ${providedHash.length}`);
       return res.status(401).json({ ok: false, error: "Invalid hash." });
     }
 
