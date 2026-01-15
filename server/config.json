@@ -1,0 +1,15 @@
+{
+  "DATABASE_PUBLIC_URL": "postgresql://postgres:mqFLESHQSGehnsyWSsELHXtCFigBlaTx@trolley.proxy.rlwy.net:48091/railway",
+  "DATABASE_URL": "postgresql://postgres:mqFLESHQSGehnsyWSsELHXtCFigBlaTx@trolley.proxy.rlwy.net:48091/railway",
+  "PGDATA": "/var/lib/postgresql/data/pgdata",
+  "PGDATABASE": "railway",
+  "PGHOST": "trolley.proxy.rlwy.net",
+  "PGPASSWORD": "mqFLESHQSGehnsyWSsELHXtCFigBlaTx",
+  "PGPORT": "48091",
+  "PGUSER": "postgres",
+  "POSTGRES_DB": "railway",
+  "POSTGRES_PASSWORD": "mqFLESHQSGehnsyWSsELHXtCFigBlaTx",
+  "POSTGRES_USER": "postgres",
+  "RAILWAY_DEPLOYMENT_DRAINING_SECONDS": "60",
+  "SSL_CERT_DAYS": "820"
+}
