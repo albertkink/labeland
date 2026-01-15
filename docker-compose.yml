@@ -39,7 +39,7 @@ services:
       # Coinbase Commerce (set these in .env or override)
       COINBASE_COMMERCE_API_KEY: ${COINBASE_COMMERCE_API_KEY:-}
       COINBASE_COMMERCE_WEBHOOK_SECRET: ${COINBASE_COMMERCE_WEBHOOK_SECRET:-}
-      APP_URL: ${APP_URL:-http://localhost:5173}
+      APP_URL: ${APP_URL:-http://label.land}
       LABEL_PRICE_USD: ${LABEL_PRICE_USD:-1}
     ports:
       - "${API_PORT:-5174}:5174"
