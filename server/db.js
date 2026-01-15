@@ -1,42 +1,14 @@
 import pg from "pg";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
 const { Pool } = pg;
-
-// Get current directory for ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Load database configuration from config.json
-let dbConfig = {};
-try {
-  const configPath = path.join(__dirname, "config.json");
-  const configFile = fs.readFileSync(configPath, "utf8");
-  dbConfig = JSON.parse(configFile);
-  console.log("Loaded database configuration from config.json");
-} catch (err) {
-  console.error("Error loading config.json, using defaults:", err.message);
-  // Fallback to defaults if config.json doesn't exist
-  dbConfig = {
-    DATABASE_URL: "postgresql://postgres:mqFLESHQSGehnsyWSsELHXtCFigBlaTx@trolley.proxy.rlwy.net:48091/railway",
-    PGHOST: "trolley.proxy.rlwy.net",
-    PGPORT: "48091",
-    PGDATABASE: "railway",
-    PGUSER: "postgres",
-    PGPASSWORD: "mqFLESHQSGehnsyWSsELHXtCFigBlaTx",
-  };
-}
 
 // PostgreSQL connection configuration
 let poolConfig;
 
-if (dbConfig.DATABASE_URL) {
-  // Use DATABASE_URL from config.json
-  console.log("Using DATABASE_URL from config.json for PostgreSQL connection");
+if (process.env.DATABASE_URL) {
+  // Use DATABASE_URL if provided (takes precedence)
+  console.log("Using DATABASE_URL for PostgreSQL connection");
   poolConfig = {
-    connectionString: dbConfig.DATABASE_URL,
+    connectionString: process.env.DATABASE_URL,
     max: 20,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 20000,
@@ -46,19 +18,19 @@ if (dbConfig.DATABASE_URL) {
   };
   // Log connection info (without password)
   try {
-    const url = new URL(dbConfig.DATABASE_URL);
+    const url = new URL(process.env.DATABASE_URL);
     console.log(`Connecting to: ${url.protocol}//${url.username}@${url.hostname}:${url.port}${url.pathname}`);
   } catch (e) {
     console.log("Using DATABASE_URL (format not parseable)");
   }
 } else {
-  // Use individual values from config.json
+  // Use environment variables with hardcoded defaults
   poolConfig = {
-    host: dbConfig.PGHOST || dbConfig.POSTGRES_HOST || "trolley.proxy.rlwy.net",
-    port: Number(dbConfig.PGPORT || dbConfig.POSTGRES_PORT || 48091),
-    database: dbConfig.PGDATABASE || dbConfig.POSTGRES_DB || "railway",
-    user: dbConfig.PGUSER || dbConfig.POSTGRES_USER || "postgres",
-    password: dbConfig.PGPASSWORD || dbConfig.POSTGRES_PASSWORD || "mqFLESHQSGehnsyWSsELHXtCFigBlaTx",
+    host: process.env.PGHOST || process.env.RAILWAY_PRIVATE_DOMAIN || "trolley.proxy.rlwy.net",
+    port: Number(process.env.PGPORT || process.env.RAILWAY_TCP_PROXY_PORT || 5432),
+    database: process.env.PGDATABASE || process.env.POSTGRES_DB || "railway",
+    user: process.env.PGUSER || process.env.POSTGRES_USER || "postgres",
+    password: process.env.PGPASSWORD || process.env.POSTGRES_PASSWORD || "uFQlJwCWEDFdsIxlMaCrrEUCMoANuiak",
     // Connection pool settings
     max: 20, // Maximum number of clients in the pool
     idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
