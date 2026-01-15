@@ -18,7 +18,7 @@ export default defineConfig({
   server: {
     proxy: {
       "/api": {
-        target: "http://localhost:5174",
+        target: "http://label.land:5174",
         changeOrigin: true,
         secure: false,
         // Force HTTP/1.1 to prevent QUIC protocol errors
