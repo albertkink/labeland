@@ -87,13 +87,21 @@ export default function SignUpForm() {
             ? String((data as { error?: unknown }).error)
             : `Sign up failed (HTTP ${r.status}).`;
         
-        // If hash already exists, generate a new hash automatically
-        if (msg.includes("Hash already exists")) {
+        // Only handle hash conflict if status is 409 and message exactly matches "Hash already exists."
+        if (r.status === 409 && msg.trim() === "Hash already exists.") {
           const newHash = generateRandomHash();
           setHash(newHash);
           // Show info message - user needs to click Sign Up again with the new hash
           // The new hash will be saved to PostgreSQL when they click Sign Up again
           setError("This hash was already used. A new hash has been generated and is ready. Click 'Sign Up' again to register with the new hash.");
+          setIsSubmitting(false);
+          return;
+        }
+        
+        // Handle username conflicts separately (username is also unique)
+        if (r.status === 409 && msg.includes("Username already exists")) {
+          // Just retry - username is regenerated each time, so next attempt should work
+          setError("Username conflict detected. Please click 'Sign Up' again - a new username will be generated.");
           setIsSubmitting(false);
           return;
         }
