@@ -556,10 +556,6 @@ app.post("/api/auth/signup", express.json(), async (req, res) => {
       console.error("Error listing users for debug:", debugErr);
     }
 
-    // Make the very first user an admin by default (dev-friendly)
-    const hasAdmin = await hasAnyAdmin();
-    const makeAdmin = !hasAdmin;
-
     // Use hash directly (no bcrypt needed since it's already a hash)
     // Use provided username or generate one from hash
     const finalUsername = username || hash.substring(0, 20) || "user";
@@ -570,7 +566,7 @@ app.post("/api/auth/signup", express.json(), async (req, res) => {
       email: null,
       telegramUsername: telegramUsername || null,
       passwordHash: hash, // Store hash directly
-      isAdmin: makeAdmin,
+      isAdmin: false, // New users are not admin by default
     };
 
     try {
@@ -659,14 +655,11 @@ app.post("/api/auth/login", express.json(), async (req, res) => {
       return res.status(401).json({ ok: false, error: "Invalid hash." });
     }
 
-    // If no admin exists yet, promote this user to admin automatically (dev-friendly).
-    // Also allow ADMIN_EMAILS to grant admin at login time.
+    // Allow ADMIN_EMAILS to grant admin at login time.
     const userEmail = user.email ? String(user.email).toLowerCase() : "";
-    const hasAdmin = await hasAnyAdmin();
     const shouldBeAdmin =
       user.isAdmin === true ||
-      (userEmail && isEmailAdmin(userEmail)) ||
-      !hasAdmin;
+      (userEmail && isEmailAdmin(userEmail));
     if (shouldBeAdmin && user.isAdmin !== true) {
       await updateUser(user.id, { isAdmin: true });
       user.isAdmin = true;
