@@ -33,28 +33,48 @@ if (process.env.DATABASE_URL) {
   // Falls back to defaults if not set (for development or if Railway vars aren't available yet)
   // Railway provides: PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
   // Also checks for alternative names: RAILWAY_PRIVATE_DOMAIN, RAILWAY_TCP_PROXY_PORT, POSTGRES_*
-  const host = process.env.PGHOST || process.env.RAILWAY_PRIVATE_DOMAIN;
-  const port = process.env.PGPORT || process.env.RAILWAY_TCP_PROXY_PORT;
-  const database = process.env.PGDATABASE || process.env.POSTGRES_DB;
-  const user = process.env.PGUSER || process.env.POSTGRES_USER;
-  const password = process.env.PGPASSWORD || process.env.POSTGRES_PASSWORD;
+  // Also supports standard DB_* variables for local development and Docker
+  // 
+  // Railway Private Networking Priority:
+  // 1. RAILWAY_PRIVATE_DOMAIN (e.g., postgres.railway.internal) - private networking
+  // 2. PGHOST (Railway service variable)
+  // 3. postgres.railway.internal (Railway convention if RAILWAY environment is set)
+  // 4. DB_HOST (for Docker/local)
+  // 5. localhost (fallback)
+  const isRailway = process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID;
+  const railwayPrivateHost = process.env.RAILWAY_PRIVATE_DOMAIN || 
+    (isRailway ? "postgres.railway.internal" : null);
+  
+  const host = process.env.PGHOST || railwayPrivateHost || process.env.DB_HOST;
+  const port = process.env.PGPORT || process.env.RAILWAY_TCP_PROXY_PORT || process.env.DB_PORT;
+  const database = process.env.PGDATABASE || process.env.POSTGRES_DB || process.env.DB_NAME;
+  const user = process.env.PGUSER || process.env.POSTGRES_USER || process.env.DB_USER;
+  const password = process.env.PGPASSWORD || process.env.POSTGRES_PASSWORD || process.env.DB_PASSWORD;
+
+  // Determine if we're using Railway private networking
+  const isPrivateNetwork = host && (
+    host.includes("railway.internal") || 
+    host === process.env.RAILWAY_PRIVATE_DOMAIN
+  );
 
   // Use Railway variables if available, otherwise fall back to defaults
   // This allows the app to start even if Railway vars aren't set yet
   // Never throw errors at initialization - let the connection attempt handle failures
+  // Defaults to localhost for local development
   poolConfig = {
-    host: host || "trolley.proxy.rlwy.net",
-    port: Number(port || "5425"),
-    database: database || "railway",
+    host: host || "localhost",
+    port: Number(port || "5432"),
+    database: database || "labelz",
     user: user || "postgres",
-    password: password || "uFQlJwCWEDFdsIxlMaCrrEUCMoANuiak",
+    password: password || "postgres",
     // Connection pool settings
     max: 20, // Maximum number of clients in the pool
     idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
     connectionTimeoutMillis: 20000, // Increased timeout
-    // SSL is required for Railway's PostgreSQL
-    ssl: {
-      rejectUnauthorized: false, // Railway uses self-signed certificates
+    // SSL: Only required for public Railway connections, not private networking
+    // Private networking (railway.internal) doesn't need SSL
+    ssl: isPrivateNetwork ? false : {
+      rejectUnauthorized: false, // Railway uses self-signed certificates for public connections
     },
   };
   
@@ -63,12 +83,13 @@ if (process.env.DATABASE_URL) {
   if (!host || !database || !user || !password) {
     console.warn(
       "⚠️  Using fallback PostgreSQL defaults. " +
-      "For production, ensure Railway PostgreSQL service variables are set: " +
-      "PGHOST, PGDATABASE, PGUSER, PGPASSWORD"
+      "For production, ensure database environment variables are set: " +
+      "DATABASE_URL (or PGHOST/PGDATABASE/PGUSER/PGPASSWORD for Railway, or DB_HOST/DB_NAME/DB_USER/DB_PASSWORD for local/Docker)"
     );
   }
   
-  console.log(`Connecting to PostgreSQL: ${poolConfig.user}@${poolConfig.host}:${poolConfig.port}/${poolConfig.database}`);
+  const connectionType = isPrivateNetwork ? "private network" : (poolConfig.ssl ? "public (SSL)" : "local");
+  console.log(`Connecting to PostgreSQL via ${connectionType}: ${poolConfig.user}@${poolConfig.host}:${poolConfig.port}/${poolConfig.database}`);
 }
 
 const pool = new Pool(poolConfig);
