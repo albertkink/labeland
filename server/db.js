@@ -1,24 +1,47 @@
 import pg from "pg";
 const { Pool } = pg;
 
-// PostgreSQL connection configuration (hardcoded)
-const poolConfig = {
-  host: process.env.DB_HOST || "trolley.proxy.rlwy.net",
-  port: Number(process.env.DB_PORT || 48091),
-  database: process.env.DB_NAME || "railway",
-  user: process.env.DB_USER || "postgres",
-  password: process.env.DB_PASSWORD || "NKPsCIejqGBleidDsqZHenKVNSAPEjnH",
-  // Connection pool settings
-  max: 20, // Maximum number of clients in the pool
-  idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
-  connectionTimeoutMillis: 20000, // Increased timeout
-  // SSL is required for Railway's PostgreSQL
-  ssl: {
-    rejectUnauthorized: false, // Railway uses self-signed certificates
-  },
-};
+// PostgreSQL connection configuration
+let poolConfig;
 
-console.log(`Connecting to PostgreSQL: ${poolConfig.user}@${poolConfig.host}:${poolConfig.port}/${poolConfig.database}`);
+if (process.env.DATABASE_URL) {
+  // Use DATABASE_URL if provided (takes precedence)
+  console.log("Using DATABASE_URL for PostgreSQL connection");
+  poolConfig = {
+    connectionString: process.env.DATABASE_URL,
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 20000,
+    ssl: {
+      rejectUnauthorized: false,
+    },
+  };
+  // Log connection info (without password)
+  try {
+    const url = new URL(process.env.DATABASE_URL);
+    console.log(`Connecting to: ${url.protocol}//${url.username}@${url.hostname}:${url.port}${url.pathname}`);
+  } catch (e) {
+    console.log("Using DATABASE_URL (format not parseable)");
+  }
+} else {
+  // Use hardcoded values or environment variables
+  poolConfig = {
+    host: process.env.DB_HOST || "trolley.proxy.rlwy.net",
+    port: Number(process.env.DB_PORT || 48091),
+    database: process.env.DB_NAME || "railway",
+    user: process.env.DB_USER || "postgres",
+    password: process.env.DB_PASSWORD || "NKPsCIejqGBleidDsqZHenKVNSAPEjnH",
+    // Connection pool settings
+    max: 20, // Maximum number of clients in the pool
+    idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
+    connectionTimeoutMillis: 20000, // Increased timeout
+    // SSL is required for Railway's PostgreSQL
+    ssl: {
+      rejectUnauthorized: false, // Railway uses self-signed certificates
+    },
+  };
+  console.log(`Connecting to PostgreSQL: ${poolConfig.user}@${poolConfig.host}:${poolConfig.port}/${poolConfig.database}`);
+}
 
 const pool = new Pool(poolConfig);
 
@@ -128,13 +151,26 @@ export const getAllUsers = async () => {
 // Get user by hash
 export const getUserByHash = async (hash) => {
   try {
+    const trimmedHash = String(hash).trim();
+    console.log(`[getUserByHash] Checking for hash: ${trimmedHash.substring(0, 20)}... (length: ${trimmedHash.length})`);
+    const dbInfo = poolConfig.connectionString 
+      ? `DATABASE_URL (${new URL(poolConfig.connectionString).pathname.replace('/', '')})`
+      : `${poolConfig.database}@${poolConfig.host}:${poolConfig.port}`;
+    console.log(`[getUserByHash] Database: ${dbInfo}`);
+    
     const result = await pool.query(
       `SELECT id, username, email, telegram_username as "telegramUsername", 
               password_hash as "passwordHash", is_admin as "isAdmin", 
               created_at as "createdAt", updated_at as "updatedAt"
        FROM users WHERE password_hash = $1`,
-      [hash]
+      [trimmedHash]
     );
+    
+    console.log(`[getUserByHash] Query returned ${result.rows.length} row(s)`);
+    if (result.rows.length > 0) {
+      console.log(`[getUserByHash] Found existing user: ${result.rows[0].username} (id: ${result.rows[0].id})`);
+    }
+    
     if (result.rows.length === 0) return null;
     const row = result.rows[0];
     return {
@@ -223,6 +259,16 @@ export const createUser = async (userData) => {
 
     // For hash-based auth, if no username provided, use hash as username
     const finalUsername = username || passwordHash.substring(0, 20) || "user";
+    const trimmedHash = String(passwordHash).trim();
+    
+    console.log(`[createUser] Creating user with:`);
+    const dbInfo = poolConfig.connectionString 
+      ? `DATABASE_URL (${new URL(poolConfig.connectionString).pathname.replace('/', '')})`
+      : `${poolConfig.database}@${poolConfig.host}:${poolConfig.port}`;
+    console.log(`  - Database: ${dbInfo}`);
+    console.log(`  - Username: ${finalUsername}`);
+    console.log(`  - Hash: ${trimmedHash.substring(0, 20)}... (length: ${trimmedHash.length})`);
+    console.log(`  - ID: ${id}`);
 
     const result = await pool.query(
       `INSERT INTO users (id, username, email, telegram_username, password_hash, is_admin)
@@ -230,8 +276,10 @@ export const createUser = async (userData) => {
        RETURNING id, username, email, telegram_username as "telegramUsername", 
                  password_hash as "passwordHash", is_admin as "isAdmin", 
                  created_at as "createdAt", updated_at as "updatedAt"`,
-      [id, finalUsername, email || null, telegramUsername || null, passwordHash, isAdmin]
+      [id, finalUsername, email || null, telegramUsername || null, trimmedHash, isAdmin]
     );
+    
+    console.log(`[createUser] Successfully created user: ${result.rows[0].username} (id: ${result.rows[0].id})`);
 
     const row = result.rows[0];
     return {
