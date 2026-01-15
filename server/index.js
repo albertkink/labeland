@@ -14,7 +14,7 @@ import {
   hasAnyAdmin,
 } from "./db.js";
 
-const PORT = Number(process.env.API_PORT || 5174);
+const PORT = 8080;
 
 // Coinbase Commerce
 // DO NOT hardcode secrets here. Set env vars in your shell (see server/README.md).
@@ -22,7 +22,7 @@ const COINBASE_COMMERCE_API_KEY = process.env.COINBASE_COMMERCE_API_KEY;
 const COINBASE_COMMERCE_WEBHOOK_SECRET =
   process.env.COINBASE_COMMERCE_WEBHOOK_SECRET;
 
-const APP_URL = process.env.APP_URL || "http://localhost:5173";
+const APP_URL = process.env.APP_URL || "http://label.land";
 const LABEL_PRICE_USD = Number(process.env.LABEL_PRICE_USD || 1);
 
 // Auth
@@ -61,8 +61,6 @@ const app = express();
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   const allowedOrigins = [
-    "http://localhost:5173",
-    "http://localhost:3000",
     "https://label.land",
     "http://label.land",
     APP_URL,
@@ -970,7 +968,7 @@ app.delete("/api/admin/orders/:orderId", requireAuth, requireAdmin, async (req, 
   try {
     await initDatabase();
     const server = app.listen(PORT, () => {
-      console.log(`API listening on http://localhost:${PORT}`);
+      console.log(`API listening on http://label.land:${PORT}`);
       console.log("Using HTTP/1.1 (QUIC/HTTP3 disabled)");
     });
     
