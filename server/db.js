@@ -2,10 +2,14 @@ import pg from "pg";
 const { Pool } = pg;
 
 // PostgreSQL connection configuration
+// Railway automatically injects these variables when you add a PostgreSQL service:
+// - DATABASE_URL (full connection string)
+// - PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
+// You can also reference variables from a PostgreSQL service using: ${{Postgres.PGDATABASE}}
 let poolConfig;
 
 if (process.env.DATABASE_URL) {
-  // Use DATABASE_URL if provided (takes precedence)
+  // Use DATABASE_URL if provided (Railway's primary connection string)
   console.log("Using DATABASE_URL for PostgreSQL connection");
   poolConfig = {
     connectionString: process.env.DATABASE_URL,
@@ -24,13 +28,28 @@ if (process.env.DATABASE_URL) {
     console.log("Using DATABASE_URL (format not parseable)");
   }
 } else {
-  // Use environment variables with hardcoded defaults
+  // Use Railway PostgreSQL service variables (automatically injected)
+  // These are provided by Railway when you add a PostgreSQL service to your project
+  const host = process.env.PGHOST || process.env.RAILWAY_PRIVATE_DOMAIN;
+  const port = process.env.PGPORT || process.env.RAILWAY_TCP_PROXY_PORT || "5432";
+  const database = process.env.PGDATABASE || process.env.POSTGRES_DB;
+  const user = process.env.PGUSER || process.env.POSTGRES_USER;
+  const password = process.env.PGPASSWORD || process.env.POSTGRES_PASSWORD;
+
+  if (!host || !database || !user || !password) {
+    throw new Error(
+      "Missing required PostgreSQL environment variables. " +
+      "Please ensure a PostgreSQL service is added to your Railway project, " +
+      "or set PGHOST, PGDATABASE, PGUSER, and PGPASSWORD manually."
+    );
+  }
+
   poolConfig = {
-    host: process.env.PGHOST || process.env.RAILWAY_PRIVATE_DOMAIN || "trolley.proxy.rlwy.net",
-    port: Number(process.env.PGPORT || process.env.RAILWAY_TCP_PROXY_PORT || 45167),
-    database: process.env.PGDATABASE || process.env.POSTGRES_DB || "railway",
-    user: process.env.PGUSER || process.env.POSTGRES_USER || "postgres",
-    password: process.env.PGPASSWORD || process.env.POSTGRES_PASSWORD || "uFQlJwCWEDFdsIxlMaCrrEUCMoANuiak",
+    host,
+    port: Number(port),
+    database,
+    user,
+    password,
     // Connection pool settings
     max: 20, // Maximum number of clients in the pool
     idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
@@ -404,6 +423,3 @@ export const closePool = async () => {
 };
 
 export default pool;
-
-
-
