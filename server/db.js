@@ -158,6 +158,17 @@ export const getUserByHash = async (hash) => {
       : `${poolConfig.database}@${poolConfig.host}:${poolConfig.port}`;
     console.log(`[getUserByHash] Database: ${dbInfo}`);
     
+    // First, let's see ALL hashes in the database for debugging
+    const allHashesResult = await pool.query(
+      `SELECT password_hash, username, id FROM users LIMIT 10`
+    );
+    console.log(`[getUserByHash] Total users in DB: ${allHashesResult.rows.length}`);
+    allHashesResult.rows.forEach((row, idx) => {
+      const storedHash = row.password_hash || '';
+      const matches = storedHash === trimmedHash;
+      console.log(`  ${idx + 1}. User: ${row.username} - Hash: ${storedHash.substring(0, 20)}... (matches: ${matches})`);
+    });
+    
     const result = await pool.query(
       `SELECT id, username, email, telegram_username as "telegramUsername", 
               password_hash as "passwordHash", is_admin as "isAdmin", 
@@ -166,9 +177,11 @@ export const getUserByHash = async (hash) => {
       [trimmedHash]
     );
     
-    console.log(`[getUserByHash] Query returned ${result.rows.length} row(s)`);
+    console.log(`[getUserByHash] Query returned ${result.rows.length} row(s) for hash: ${trimmedHash.substring(0, 20)}...`);
     if (result.rows.length > 0) {
       console.log(`[getUserByHash] Found existing user: ${result.rows[0].username} (id: ${result.rows[0].id})`);
+      console.log(`[getUserByHash] Stored hash: ${result.rows[0].passwordHash?.substring(0, 20)}... (length: ${result.rows[0].passwordHash?.length})`);
+      console.log(`[getUserByHash] Hash match: ${result.rows[0].passwordHash === trimmedHash}`);
     }
     
     if (result.rows.length === 0) return null;
