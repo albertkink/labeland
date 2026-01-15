@@ -30,9 +30,12 @@ ENV NODE_ENV=production
 ENV API_PORT=5174
 
 # PostgreSQL connection defaults (can be overridden via env vars)
-ENV DB_HOST=postgres
-ENV DB_PORT=5432
-ENV DB_NAME=labelz
+# For Docker Compose: uses DB_* variables (defaults to 'postgres' service)
+# For Railway: Railway automatically provides DATABASE_URL or PGHOST/PGPORT/etc.
+# Railway private networking: Uses postgres.railway.internal when available
+ENV DB_HOST=postgres.railway.internal
+ENV DB_PORT=45167
+ENV DB_NAME=postgres
 ENV DB_USER=postgres
 ENV DB_PASSWORD=postgres
 
@@ -57,8 +60,11 @@ EXPOSE 5174
 # Install curl for healthcheck
 RUN apk add --no-cache curl
 
+# Healthcheck uses localhost since it runs inside the container
+# Uses the default API_PORT (5174) - can be overridden via env var at runtime
+# Note: HEALTHCHECK doesn't support variable expansion, so we use the default port
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-  CMD curl -f http://label.land:5174/api/health || exit 1
+  CMD curl -f http://localhost:5174/api/health || exit 1
 
 # Start the Node/Express server
 # Express uses HTTP/1.1 by default, which prevents QUIC protocol errors
