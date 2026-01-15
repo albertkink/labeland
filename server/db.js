@@ -27,7 +27,7 @@ if (process.env.DATABASE_URL) {
   // Use environment variables with hardcoded defaults
   poolConfig = {
     host: process.env.PGHOST || process.env.RAILWAY_PRIVATE_DOMAIN || "trolley.proxy.rlwy.net",
-    port: Number(process.env.PGPORT || process.env.RAILWAY_TCP_PROXY_PORT || 5432),
+    port: Number(process.env.PGPORT || process.env.RAILWAY_TCP_PROXY_PORT || 5425),
     database: process.env.PGDATABASE || process.env.POSTGRES_DB || "railway",
     user: process.env.PGUSER || process.env.POSTGRES_USER || "postgres",
     password: process.env.PGPASSWORD || process.env.POSTGRES_PASSWORD || "uFQlJwCWEDFdsIxlMaCrrEUCMoANuiak",
@@ -404,4 +404,5 @@ export const closePool = async () => {
 };
 
 export default pool;
+
 
