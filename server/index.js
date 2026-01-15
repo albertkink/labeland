@@ -523,16 +523,30 @@ app.post("/api/auth/signup", express.json(), async (req, res) => {
 
     // Check if hash already exists
     try {
+      console.log(`[signup] Checking hash existence for: ${hash.substring(0, 20)}...`);
       const existingUser = await getUserByHash(hash);
       if (existingUser) {
+        console.log(`[signup] Hash already exists for user: ${existingUser.username} (id: ${existingUser.id})`);
         return res
           .status(409)
           .json({ ok: false, error: "Hash already exists." });
       }
+      console.log(`[signup] Hash is available, proceeding with user creation`);
     } catch (hashCheckErr) {
       console.error("Error checking hash existence:", hashCheckErr);
       // Don't fail signup if hash check fails - continue with creation
       // (worst case: duplicate hash will be caught by unique constraint)
+    }
+    
+    // Debug: List all existing users to verify we're querying the right DB
+    try {
+      const allUsers = await getAllUsers();
+      console.log(`[signup] Current users in database: ${allUsers.length} (showing latest 5)`);
+      allUsers.slice(-5).reverse().forEach((user, idx) => {
+        console.log(`  ${idx + 1}. ${user.username} - hash: ${user.passwordHash?.substring(0, 20)}... (created: ${user.createdAt})`);
+      });
+    } catch (debugErr) {
+      console.error("Error listing users for debug:", debugErr);
     }
 
     // Make the very first user an admin by default (dev-friendly)
