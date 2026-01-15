@@ -30,11 +30,11 @@ ENV NODE_ENV=production
 ENV API_PORT=5174
 
 # PostgreSQL connection defaults (can be overridden via env vars)
-ENV DB_HOST=trolley.proxy.rlwy.net
-ENV DB_PORT=48091
-ENV DB_NAME=railway
+ENV DB_HOST=postgres
+ENV DB_PORT=5432
+ENV DB_NAME=labelz
 ENV DB_USER=postgres
-ENV DB_PASSWORD=NKPsCIejqGBleidDsqZHenKVNSAPEjnH
+ENV DB_PASSWORD=postgres
 
 # Install only production dependencies
 COPY package.json package-lock.json* ./
@@ -51,18 +51,17 @@ COPY --from=builder /app/server ./server
 RUN mkdir -p /app/data
 
 # Expose the API port
-EXPOSE 5175
+EXPOSE 5174
 
 # Health check (checks if the API is responding)
 # Install curl for healthcheck
 RUN apk add --no-cache curl
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-  CMD curl -f http://localhost:5174/api/health || exit 1
+  CMD curl -f http://label.land:5174/api/health || exit 1
 
 # Start the Node/Express server
 # Express uses HTTP/1.1 by default, which prevents QUIC protocol errors
 # The server will serve the built React app from /dist and handle API routes
 # Express by default uses HTTP/1.1, which prevents QUIC protocol errors
 CMD ["node", "server/index.js"]
-
