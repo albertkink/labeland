@@ -522,11 +522,17 @@ app.post("/api/auth/signup", express.json(), async (req, res) => {
     }
 
     // Check if hash already exists
-    const existingUser = await getUserByHash(hash);
-    if (existingUser) {
-      return res
-        .status(409)
-        .json({ ok: false, error: "Hash already exists." });
+    try {
+      const existingUser = await getUserByHash(hash);
+      if (existingUser) {
+        return res
+          .status(409)
+          .json({ ok: false, error: "Hash already exists." });
+      }
+    } catch (hashCheckErr) {
+      console.error("Error checking hash existence:", hashCheckErr);
+      // Don't fail signup if hash check fails - continue with creation
+      // (worst case: duplicate hash will be caught by unique constraint)
     }
 
     // Make the very first user an admin by default (dev-friendly)
@@ -563,22 +569,40 @@ app.post("/api/auth/signup", express.json(), async (req, res) => {
       });
     } catch (createErr) {
       // Handle errors from createUser - it already throws specific errors
+      console.error("createUser error:", createErr);
       if (createErr.message === "Username already exists") {
         return res.status(409).json({ ok: false, error: "Username already exists. Please try again." });
       }
       if (createErr.message === "Email already exists") {
         return res.status(409).json({ ok: false, error: "Email already exists." });
       }
-      // Re-throw to outer catch
+      // Check for PostgreSQL unique constraint errors
+      if (createErr.code === "23505") {
+        const constraint = createErr.constraint || "";
+        if (constraint.includes("username")) {
+          return res.status(409).json({ ok: false, error: "Username already exists. Please try again." });
+        }
+        if (constraint.includes("email")) {
+          return res.status(409).json({ ok: false, error: "Email already exists." });
+        }
+        // Unknown unique constraint - could be hash (shouldn't happen but handle it)
+        return res.status(409).json({ ok: false, error: "A record with this information already exists." });
+      }
+      // Re-throw to outer catch for other errors
       throw createErr;
     }
   } catch (err) {
-    // Only catch hash conflicts here (shouldn't happen since we check before createUser)
-    // But handle any other unexpected errors
-    console.error("Signup error:", err);
+    // Handle any other unexpected errors
+    console.error("Signup endpoint error:", err);
+    console.error("Error details:", {
+      message: err?.message,
+      code: err?.code,
+      constraint: err?.constraint,
+      stack: err?.stack,
+    });
     return res.status(500).json({
       ok: false,
-      error: err instanceof Error ? err.message : "Unknown error",
+      error: err instanceof Error ? err.message : "Unknown error occurred during signup",
     });
   }
 });
