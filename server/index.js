@@ -22,7 +22,15 @@ const COINBASE_COMMERCE_API_KEY = process.env.COINBASE_COMMERCE_API_KEY;
 const COINBASE_COMMERCE_WEBHOOK_SECRET =
   process.env.COINBASE_COMMERCE_WEBHOOK_SECRET;
 
-const APP_URL = process.env.APP_URL || "http://label.land";
+// App URL configuration
+// Railway provides RAILWAY_PRIVATE_DOMAIN for private networking (e.g., labelz.railway.internal)
+// For external redirects (Coinbase Commerce), we need the public URL
+const RAILWAY_PRIVATE_DOMAIN = process.env.RAILWAY_PRIVATE_DOMAIN; // App's private domain
+const RAILWAY_PUBLIC_DOMAIN = process.env.RAILWAY_PUBLIC_DOMAIN; // App's public domain (if set)
+const APP_URL = process.env.APP_URL || 
+  (RAILWAY_PUBLIC_DOMAIN ? `https://${RAILWAY_PUBLIC_DOMAIN}` : "http://label.land");
+const APP_PRIVATE_URL = RAILWAY_PRIVATE_DOMAIN ? `http://${RAILWAY_PRIVATE_DOMAIN}` : null;
+
 const LABEL_PRICE_USD = Number(process.env.LABEL_PRICE_USD || 1);
 
 // Auth
@@ -64,6 +72,7 @@ app.use((req, res, next) => {
     "https://label.land",
     "http://label.land",
     APP_URL,
+    APP_PRIVATE_URL, // Allow private domain for internal service-to-service communication
   ].filter(Boolean);
   
   if (origin && allowedOrigins.includes(origin)) {
@@ -968,7 +977,11 @@ app.delete("/api/admin/orders/:orderId", requireAuth, requireAdmin, async (req, 
   try {
     await initDatabase();
     const server = app.listen(PORT, () => {
-      console.log(`API listening on http://label.land:${PORT}`);
+      console.log(`API listening on port ${PORT}`);
+      if (APP_PRIVATE_URL) {
+        console.log(`  Private URL: ${APP_PRIVATE_URL}:${PORT}`);
+      }
+      console.log(`  Public URL: ${APP_URL}`);
       console.log("Using HTTP/1.1 (QUIC/HTTP3 disabled)");
     });
     
