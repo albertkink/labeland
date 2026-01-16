@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 
 // Assume these icons are imported from an icon library
@@ -18,7 +18,7 @@ type NavItem = {
   subItems?: { name: string; path: string; pro?: boolean; new?: boolean }[];
 };
 
-const navItems: NavItem[] = [
+const allNavItems: NavItem[] = [
   {
     name: "Dashboard",
     icon: <GridIcon />,
@@ -43,6 +43,32 @@ const navItems: NavItem[] = [
 const AppSidebar: React.FC = () => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered } = useSidebar();
   const location = useLocation();
+
+  // Get user info to check admin status
+  const user = useMemo(() => {
+    try {
+      const raw = localStorage.getItem("auth.user");
+      return raw
+        ? (JSON.parse(raw) as {
+            username?: string;
+            email?: string;
+            telegramUsername?: string;
+            isAdmin?: boolean;
+          })
+        : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // Filter nav items to exclude Admin if user is not admin
+  const navItems = useMemo(() => {
+    const isAdmin = user?.isAdmin === true;
+    if (isAdmin) {
+      return allNavItems;
+    }
+    return allNavItems.filter((item) => item.name !== "Admin");
+  }, [user]);
 
   const [openSubmenu, setOpenSubmenu] = useState<{
     type: "main" | "others";
