@@ -52,7 +52,7 @@ export default function UserDropdown() {
       >
         <span className="mr-3 overflow-hidden rounded-full h-11 w-11">
           <img
-            src="/images/user/user-01.png"
+            src="/images/user/owner.jpg"
             alt="User"
           />
         </span>
