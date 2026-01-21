@@ -4,7 +4,6 @@ import { Link } from "react-router";
 import { useSidebar } from "../context/SidebarContext";
 import { useCart } from "../context/CartContext";
 import { ThemeToggleButton } from "../components/common/ThemeToggleButton";
-import NotificationDropdown from "../components/header/NotificationDropdown";
 import UserDropdown from "../components/header/UserDropdown";
 
 const CreditsDropdown: React.FC = () => {
@@ -425,8 +424,6 @@ const AppHeader: React.FC = () => {
             <CreditsDropdown />
             <CartButton count={cartCount} />
             {/* <!-- Cart Button --> */}
-            <NotificationDropdown />
-            {/* <!-- Notification Menu Area --> */}
           </div>
           {/* <!-- User Area --> */}
           <UserDropdown />
