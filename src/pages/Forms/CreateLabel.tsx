@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router";
 import PageMeta from "../../components/common/PageMeta";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import ComponentCard from "../../components/common/ComponentCard";
@@ -7,14 +7,32 @@ import Label from "../../components/form/Label";
 import Input from "../../components/form/input/InputField";
 import Select from "../../components/form/Select";
 import Button from "../../components/ui/button/Button";
-import { useCart } from "../../context/CartContext";
+import { Modal } from "../../components/ui/modal";
 import { COUNTRY_OPTIONS } from "../../constants/countries";
 
 type Carrier = "fedex" | "ups" | "usps" | "dhl";
 
+type UserLabel = {
+  id: string;
+  status: "pending" | "done" | "cancelled";
+  declineReason?: string | null;
+  labelData: Record<string, unknown>;
+  files: { filename: string; originalName?: string }[];
+  createdAt: string;
+  updatedAt: string;
+};
+
 export default function CreateLabel() {
-  const navigate = useNavigate();
-  const { addItem } = useCart();
+  const token = useMemo(() => localStorage.getItem("auth.token") || "", []);
+  const isAuthed = Boolean(token);
+
+  const [labels, setLabels] = useState<UserLabel[]>([]);
+  const [labelsError, setLabelsError] = useState<string | null>(null);
+  const [showDeclineModal, setShowDeclineModal] = useState<{
+    open: boolean;
+    label: UserLabel | null;
+  }>({ open: false, label: null });
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const suggestHsCode = (raw: string): string | null => {
     const s = raw.trim().toLowerCase();
@@ -126,7 +144,7 @@ export default function CreateLabel() {
   const fromZipAbortRef = useRef<AbortController | null>(null);
   const toZipAbortRef = useRef<AbortController | null>(null);
 
-  const [purchaseResult, setPurchaseResult] = useState<{
+  const [createResult, setCreateResult] = useState<{
     ok: boolean;
     message: string;
   } | null>(null);
@@ -253,6 +271,85 @@ export default function CreateLabel() {
     // We intentionally include hsCode/hsCodeSource so behavior is stable for manual override.
   }, [declarationItem, hsCode, hsCodeSource]);
 
+  const refreshLabels = useCallback(async () => {
+    if (!token) return;
+    setLabelsError(null);
+    try {
+      const r = await fetch("/api/labels", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const raw = await r.text();
+      let data: unknown = null;
+      try {
+        data = raw ? JSON.parse(raw) : null;
+      } catch {
+        data = null;
+      }
+      if (!r.ok) {
+        const msg =
+          data && typeof data === "object" && "error" in data
+            ? String((data as { error?: unknown }).error)
+            : `Failed to load labels (HTTP ${r.status}).`;
+        throw new Error(msg);
+      }
+      const resp = data as { labels?: UserLabel[] };
+      setLabels(Array.isArray(resp.labels) ? resp.labels : []);
+    } catch (e) {
+      setLabelsError(e instanceof Error ? e.message : "Failed to load labels.");
+    }
+  }, [token]);
+
+  useEffect(() => {
+    void refreshLabels();
+  }, [refreshLabels]);
+
+  const handleDownload = useCallback(
+    async (labelId: string) => {
+      if (!token) return;
+      setDownloadingId(labelId);
+      try {
+        const r = await fetch(`/api/labels/${encodeURIComponent(labelId)}/download`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!r.ok) {
+          const raw = await r.text();
+          let data: unknown = null;
+          try {
+            data = raw ? JSON.parse(raw) : null;
+          } catch {
+            data = null;
+          }
+          const msg =
+            data && typeof data === "object" && "error" in data
+              ? String((data as { error?: unknown }).error)
+              : "Download failed.";
+          throw new Error(msg);
+        }
+        const blob = await r.blob();
+        const disposition = r.headers.get("Content-Disposition");
+        let filename = `label-${labelId}-documents.zip`;
+        if (disposition) {
+          const m = disposition.match(/filename="?([^";\n]+)"?/);
+          if (m) filename = m[1].trim();
+        }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        setCreateResult({
+          ok: false,
+          message: e instanceof Error ? e.message : "Download failed.",
+        });
+      } finally {
+        setDownloadingId(null);
+      }
+    },
+    [token],
+  );
+
   const isValid = useMemo(() => {
     const weightNum = Number(weightLbs);
     const lengthNum = Number(lengthIn);
@@ -315,12 +412,14 @@ export default function CreateLabel() {
     toCountry,
   ]);
 
-  const handlePurchase = (e: React.FormEvent) => {
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleCreateLabel = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isValid) {
-      setPurchaseResult({
+    if (!isValid || !token) {
+      setCreateResult({
         ok: false,
-        message: "Please complete all required fields before purchasing.",
+        message: "Please complete all required fields. Sign in to create labels.",
       });
       return;
     }
@@ -332,7 +431,6 @@ export default function CreateLabel() {
     const qtyInput = Number(declarationQuantity);
     const declaredValueInput = Number(declaredValueUsd);
 
-    // Normalize to canonical units for storage (lbs + inches).
     const normalizedWeightLbs =
       unitSystem === "metric" ? weightInput / 0.45359237 : weightInput;
     const normalizedDimsIn =
@@ -344,15 +442,7 @@ export default function CreateLabel() {
           }
         : { length: lengthInput, width: widthInput, height: heightInput };
 
-    const id =
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `id_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-
-    addItem({
-      id,
-      createdAt: new Date().toISOString(),
-      kind: "label",
+    const labelData = {
       carrier: carrier || "",
       service,
       declarationItem: declarationItem.trim(),
@@ -381,20 +471,148 @@ export default function CreateLabel() {
         zip: toZip.trim(),
         country: toCountry,
       },
-    });
+    };
 
-    navigate("/cart");
+    setCreateResult(null);
+    setSubmitting(true);
+    try {
+      const r = await fetch("/api/labels", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ labelData }),
+      });
+      const raw = await r.text();
+      let data: unknown = null;
+      try {
+        data = raw ? JSON.parse(raw) : null;
+      } catch {
+        data = null;
+      }
+      if (!r.ok) {
+        const msg =
+          data && typeof data === "object" && "error" in data
+            ? String((data as { error?: unknown }).error)
+            : `Create failed (HTTP ${r.status}).`;
+        throw new Error(msg);
+      }
+      setCreateResult({ ok: true, message: "Label created. You can track it below." });
+      await refreshLabels();
+    } catch (e) {
+      setCreateResult({
+        ok: false,
+        message: e instanceof Error ? e.message : "Create failed.",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const labelSummary = (l: UserLabel) => {
+    const d = l.labelData as { carrier?: string; service?: string };
+    const carrier = d?.carrier ?? "—";
+    const service = d?.service ?? "—";
+    return `${String(carrier).toUpperCase()} • ${service}`;
   };
 
   return (
     <div>
       <PageMeta
         title="Create Label | Labelz"
-        description="Create a shipping label and purchase it."
+        description="Create a shipping label and track pending, done, or cancelled requests."
       />
       <PageBreadcrumb pageTitle="Create Label" />
 
-      <form onSubmit={handlePurchase} className="space-y-6">
+      {!isAuthed ? (
+        <ComponentCard
+          title="Sign in required"
+          desc="Create label and view your labels."
+        >
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            <Link to="/signin" className="text-brand-500 hover:underline">
+              Sign in
+            </Link>{" "}
+            to create labels and see pending, done, or cancelled requests.
+          </p>
+        </ComponentCard>
+      ) : null}
+
+      {isAuthed ? (
+        <ComponentCard
+          title="My labels"
+          desc="Pending, done, or cancelled. Download documents when done, or view decline reason when cancelled."
+        >
+          {labelsError ? (
+            <div className="mb-4 rounded-lg border border-error-500/30 bg-error-500/10 px-4 py-3 text-sm text-error-700 dark:text-error-400">
+              {labelsError}
+            </div>
+          ) : null}
+          {labels.length === 0 ? (
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              No labels yet. Create one below.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {labels.map((l) => (
+                <div
+                  key={l.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-white/[0.03]"
+                >
+                  <div>
+                    <div className="text-sm font-medium text-gray-800 dark:text-white/90">
+                      {labelSummary(l)}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-2 text-xs text-gray-500 dark:text-gray-400">
+                      <span>{new Date(l.createdAt).toLocaleString()}</span>
+                      <span
+                        className={
+                          l.status === "done"
+                            ? "text-success-600 dark:text-success-400"
+                            : l.status === "cancelled"
+                            ? "text-error-600 dark:text-error-400"
+                            : "text-gray-500 dark:text-gray-400"
+                        }
+                      >
+                        {l.status}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    {l.status === "pending" ? (
+                      <span className="text-sm text-gray-400 dark:text-gray-500">
+                        No action
+                      </span>
+                    ) : l.status === "done" ? (
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        onClick={() => void handleDownload(l.id)}
+                        disabled={downloadingId !== null}
+                      >
+                        {downloadingId === l.id ? "Downloading…" : "Download all documents"}
+                      </Button>
+                    ) : l.status === "cancelled" ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          setShowDeclineModal({ open: true, label: l })
+                        }
+                      >
+                        Show me
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </ComponentCard>
+      ) : null}
+
+      <form onSubmit={handleCreateLabel} className="space-y-6">
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           <ComponentCard
             title="Shipment"
@@ -435,7 +653,7 @@ export default function CreateLabel() {
                     }
 
                     setUnitSystem(next);
-                    setPurchaseResult(null);
+                    setCreateResult(null);
                   }}
                 />
               </div>
@@ -447,7 +665,7 @@ export default function CreateLabel() {
                   onChange={(v) => {
                     setCarrier(v as Carrier);
                     setService("");
-                    setPurchaseResult(null);
+                    setCreateResult(null);
                   }}
                 />
               </div>
@@ -461,7 +679,7 @@ export default function CreateLabel() {
                   defaultValue={service}
                   onChange={(v) => {
                     setService(v);
-                    setPurchaseResult(null);
+                    setCreateResult(null);
                   }}
                   className={!carrier ? "opacity-60" : ""}
                 />
@@ -474,7 +692,7 @@ export default function CreateLabel() {
                   value={declarationItem}
                   onChange={(e) => {
                     setDeclarationItem(e.target.value);
-                    setPurchaseResult(null);
+                    setCreateResult(null);
                   }}
                 />
               </div>
@@ -489,7 +707,7 @@ export default function CreateLabel() {
                   value={declarationQuantity}
                   onChange={(e) => {
                     setDeclarationQuantity(e.target.value);
-                    setPurchaseResult(null);
+                    setCreateResult(null);
                   }}
                 />
               </div>
@@ -504,7 +722,7 @@ export default function CreateLabel() {
                   value={declaredValueUsd}
                   onChange={(e) => {
                     setDeclaredValueUsd(e.target.value);
-                    setPurchaseResult(null);
+                    setCreateResult(null);
                   }}
                 />
               </div>
@@ -517,7 +735,7 @@ export default function CreateLabel() {
                   onChange={(e) => {
                     setHsCode(e.target.value);
                     setHsCodeSource(e.target.value.trim() ? "manual" : "auto");
-                    setPurchaseResult(null);
+                    setCreateResult(null);
                   }}
                   hint={hsHint || "If you type a declaration item, we’ll try to suggest a HS code."}
                 />
@@ -535,7 +753,7 @@ export default function CreateLabel() {
                   value={weightLbs}
                   onChange={(e) => {
                     setWeightLbs(e.target.value);
-                    setPurchaseResult(null);
+                    setCreateResult(null);
                   }}
                 />
               </div>
@@ -558,7 +776,7 @@ export default function CreateLabel() {
                       value={lengthIn}
                       onChange={(e) => {
                         setLengthIn(e.target.value);
-                        setPurchaseResult(null);
+                        setCreateResult(null);
                       }}
                     />
                   </div>
@@ -575,7 +793,7 @@ export default function CreateLabel() {
                       value={widthIn}
                       onChange={(e) => {
                         setWidthIn(e.target.value);
-                        setPurchaseResult(null);
+                        setCreateResult(null);
                       }}
                     />
                   </div>
@@ -592,7 +810,7 @@ export default function CreateLabel() {
                       value={heightIn}
                       onChange={(e) => {
                         setHeightIn(e.target.value);
-                        setPurchaseResult(null);
+                        setCreateResult(null);
                       }}
                     />
                   </div>
@@ -602,8 +820,8 @@ export default function CreateLabel() {
           </ComponentCard>
 
           <ComponentCard
-            title="Purchase"
-            desc="Review and purchase your label."
+            title="Create"
+            desc="Review and create your label request."
           >
             {purchaseResult ? (
               <div
@@ -617,7 +835,7 @@ export default function CreateLabel() {
               </div>
             ) : (
               <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600 dark:border-gray-800 dark:bg-white/[0.03] dark:text-gray-400">
-                Fill in the shipment + address details, then click Purchase.
+                Fill in the shipment + address details, then click Create Label.
               </div>
             )}
 
@@ -625,10 +843,10 @@ export default function CreateLabel() {
               <Button
                 type="submit"
                 variant="primary"
-                disabled={!isValid}
+                disabled={!isValid || !isAuthed || submitting}
                 className="w-full sm:w-auto"
               >
-                Purchase Label
+                {submitting ? "Creating…" : "Create Label"}
               </Button>
             </div>
           </ComponentCard>
@@ -644,7 +862,7 @@ export default function CreateLabel() {
                   defaultValue={fromCountry}
                   onChange={(v) => {
                     setFromCountry(v);
-                    setPurchaseResult(null);
+                    setCreateResult(null);
                   }}
                 />
               </div>
@@ -656,7 +874,7 @@ export default function CreateLabel() {
                   value={fromName}
                   onChange={(e) => {
                     setFromName(e.target.value);
-                    setPurchaseResult(null);
+                    setCreateResult(null);
                   }}
                 />
               </div>
@@ -668,7 +886,7 @@ export default function CreateLabel() {
                   value={fromAddress1}
                   onChange={(e) => {
                     setFromAddress1(e.target.value);
-                    setPurchaseResult(null);
+                    setCreateResult(null);
                   }}
                 />
               </div>
@@ -680,7 +898,7 @@ export default function CreateLabel() {
                   value={fromCity}
                   onChange={(e) => {
                     setFromCity(e.target.value);
-                    setPurchaseResult(null);
+                    setCreateResult(null);
                   }}
                 />
               </div>
@@ -692,7 +910,7 @@ export default function CreateLabel() {
                   value={fromState}
                   onChange={(e) => {
                     setFromState(e.target.value);
-                    setPurchaseResult(null);
+                    setCreateResult(null);
                   }}
                 />
               </div>
@@ -704,7 +922,7 @@ export default function CreateLabel() {
                   value={fromZip}
                   onChange={(e) => {
                     setFromZip(e.target.value);
-                    setPurchaseResult(null);
+                    setCreateResult(null);
                   }}
                   hint={
                     fromZipStatus.state === "loading"
@@ -730,7 +948,7 @@ export default function CreateLabel() {
                   defaultValue={toCountry}
                   onChange={(v) => {
                     setToCountry(v);
-                    setPurchaseResult(null);
+                    setCreateResult(null);
                   }}
                 />
               </div>
@@ -742,7 +960,7 @@ export default function CreateLabel() {
                   value={toName}
                   onChange={(e) => {
                     setToName(e.target.value);
-                    setPurchaseResult(null);
+                    setCreateResult(null);
                   }}
                 />
               </div>
@@ -754,7 +972,7 @@ export default function CreateLabel() {
                   value={toAddress1}
                   onChange={(e) => {
                     setToAddress1(e.target.value);
-                    setPurchaseResult(null);
+                    setCreateResult(null);
                   }}
                 />
               </div>
@@ -766,7 +984,7 @@ export default function CreateLabel() {
                   value={toCity}
                   onChange={(e) => {
                     setToCity(e.target.value);
-                    setPurchaseResult(null);
+                    setCreateResult(null);
                   }}
                 />
               </div>
@@ -778,7 +996,7 @@ export default function CreateLabel() {
                   value={toState}
                   onChange={(e) => {
                     setToState(e.target.value);
-                    setPurchaseResult(null);
+                    setCreateResult(null);
                   }}
                 />
               </div>
@@ -790,7 +1008,7 @@ export default function CreateLabel() {
                   value={toZip}
                   onChange={(e) => {
                     setToZip(e.target.value);
-                    setPurchaseResult(null);
+                    setCreateResult(null);
                   }}
                   hint={
                     toZipStatus.state === "loading"
@@ -808,6 +1026,27 @@ export default function CreateLabel() {
           </ComponentCard>
         </div>
       </form>
+
+      <Modal
+        isOpen={showDeclineModal.open}
+        onClose={() => setShowDeclineModal({ open: false, label: null })}
+        className="max-w-[500px] m-4 p-6"
+      >
+        <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
+          Why this label cannot be done
+        </h3>
+        <div className="mt-4 whitespace-pre-wrap rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 dark:border-gray-800 dark:bg-white/[0.03] dark:text-gray-300">
+          {showDeclineModal.label?.declineReason ?? "No reason provided."}
+        </div>
+        <div className="mt-6 flex justify-end">
+          <Button
+            variant="outline"
+            onClick={() => setShowDeclineModal({ open: false, label: null })}
+          >
+            Close
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 }
