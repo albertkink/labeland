@@ -8,6 +8,7 @@ import {
   GridIcon,
   HorizontaLDots,
   PageIcon,
+  ChatIcon,
 } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
 
@@ -30,6 +31,14 @@ const allNavItems: NavItem[] = [
     subItems: [
       { name: "Create Label", path: "/create-label" },
       { name: "Store with accounts", path: "/store" },
+    ],
+  },
+  {
+    name: "SMS Verification",
+    icon: <ChatIcon />,
+    subItems: [
+      { name: "Temporary Number", path: "/sms-verification/temporary-number" },
+      { name: "Number Rental", path: "/sms-verification/number-rental" },
     ],
   },
   {
