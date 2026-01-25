@@ -10,6 +10,7 @@ import CreateLabel from "./pages/Forms/CreateLabel";
 import AccountsStore from "./pages/Marketplace/AccountsStore";
 import TemporaryNumber from "./pages/SMSVerification/TemporaryNumber";
 import NumberRental from "./pages/SMSVerification/NumberRental";
+import Cart from "./pages/Cart";
 import RequireAuth from "./components/auth/RequireAuth";
 
 export default function App() {
@@ -28,6 +29,7 @@ export default function App() {
             <Route index path="/" element={<Home />} />
             <Route path="/create-label" element={<CreateLabel />} />
             <Route path="/store" element={<AccountsStore />} />
+            <Route path="/cart" element={<Cart />} />
             <Route
               path="/sms-verification/temporary-number"
               element={<TemporaryNumber />}
