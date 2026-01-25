@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router";
 import PageMeta from "../../components/common/PageMeta";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import ComponentCard from "../../components/common/ComponentCard";
@@ -41,6 +42,16 @@ export default function AccountsStore() {
   const [serviceQuery, setServiceQuery] = useState("");
   const [country, setCountry] = useState("");
   const [priceSort, setPriceSort] = useState<"none" | "asc" | "desc">("none");
+
+  const isAdmin = useMemo(() => {
+    try {
+      const raw = localStorage.getItem("auth.user");
+      const user = raw ? (JSON.parse(raw) as { isAdmin?: boolean }) : null;
+      return Boolean(user?.isAdmin);
+    } catch {
+      return false;
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -250,11 +261,21 @@ export default function AccountsStore() {
           </div>
 
           <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+            <div className="flex flex-wrap items-center gap-3">
+              {isAdmin ? (
+                <Link
+                  to="/admin#account-products"
+                  className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-medium transition bg-brand-500 text-white shadow-theme-xs hover:bg-brand-600 dark:bg-brand-500 dark:hover:bg-brand-600"
+                >
+                  Add to account market
+                </Link>
+              ) : null}
               <div className="text-sm text-gray-600 dark:text-gray-400 sm:self-center">
                 Showing <span className="font-medium">{filteredProducts.length}</span>{" "}
                 of <span className="font-medium">{products.length}</span>
               </div>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
               <Button
                 variant="outline"
                 onClick={() => {
