@@ -7,7 +7,6 @@ import {
   ChevronDownIcon,
   GridIcon,
   HorizontaLDots,
-  ListIcon,
 } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
 
@@ -20,18 +19,9 @@ type NavItem = {
 
 const allNavItems: NavItem[] = [
   {
-    name: "Dashboard",
+    name: "Bug Fix Blog",
     icon: <GridIcon />,
-  },
-  {
-    icon: <ListIcon />,
-    name: "Create Label",
-    path: "/form-elements",
-  },
-  {
-    icon: <BoxCubeIcon />,
-    name: "Accounts Store",
-    path: "/accounts-store",
+    path: "/",
   },
   {
     icon: <BoxCubeIcon />,
