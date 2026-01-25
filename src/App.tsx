@@ -8,6 +8,8 @@ import Home from "./pages/Dashboard/Home";
 import AdminDashboard from "./pages/Admin/AdminDashboard";
 import CreateLabel from "./pages/Forms/CreateLabel";
 import AccountsStore from "./pages/Marketplace/AccountsStore";
+import TemporaryNumber from "./pages/SMSVerification/TemporaryNumber";
+import NumberRental from "./pages/SMSVerification/NumberRental";
 import RequireAuth from "./components/auth/RequireAuth";
 
 export default function App() {
@@ -26,6 +28,14 @@ export default function App() {
             <Route index path="/" element={<Home />} />
             <Route path="/create-label" element={<CreateLabel />} />
             <Route path="/store" element={<AccountsStore />} />
+            <Route
+              path="/sms-verification/temporary-number"
+              element={<TemporaryNumber />}
+            />
+            <Route
+              path="/sms-verification/number-rental"
+              element={<NumberRental />}
+            />
             <Route path="/admin" element={<AdminDashboard />} />
           </Route>
 
