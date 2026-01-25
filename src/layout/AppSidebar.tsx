@@ -99,20 +99,25 @@ const AppSidebar: React.FC = () => {
   useEffect(() => {
     let submenuMatched = false;
     navItems.forEach((nav, index) => {
-      if (nav.subItems) {
+      if (nav.subItems && nav.name !== "SMS Verification") {
         nav.subItems.forEach((subItem) => {
           if (isActive(subItem.path)) {
             setOpenSubmenu({ type: "main", index });
             submenuMatched = true;
           }
-        });
+        }));
+      } else if (nav.subItems && nav.name === "SMS Verification") {
+        // Close SMS Verification submenu if it's open
+        if (openSubmenu?.type === "main" && openSubmenu?.index === index) {
+          setOpenSubmenu(null);
+        }
       }
     });
 
     if (!submenuMatched) {
       setOpenSubmenu(null);
     }
-  }, [location, isActive, navItems]);
+  }, [location, isActive, navItems, openSubmenu]);
 
   useEffect(() => {
     if (openSubmenu !== null) {
@@ -147,17 +152,31 @@ const AppSidebar: React.FC = () => {
         <li key={nav.name}>
           {nav.subItems ? (
             <button
-              onClick={() => !isSMSVerification && handleSubmenuToggle(index, menuType)}
+              onClick={(e) => {
+                if (isSMSVerification) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  return;
+                }
+                handleSubmenuToggle(index, menuType);
+              }}
+              onMouseDown={(e) => {
+                if (isSMSVerification) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }
+              }}
               disabled={isSMSVerification}
               className={`menu-item group ${
                 openSubmenu?.type === menuType && openSubmenu?.index === index
                   ? "menu-item-active"
                   : "menu-item-inactive"
-              } ${isSMSVerification ? "cursor-not-allowed opacity-50" : "cursor-pointer"} ${
+              } ${isSMSVerification ? "cursor-not-allowed opacity-50 pointer-events-none" : "cursor-pointer"} ${
                 !isExpanded && !isHovered
                   ? "lg:justify-center"
                   : "lg:justify-start"
               }`}
+              style={isSMSVerification ? { pointerEvents: 'none' } : {}}
             >
               <span
                 className={`menu-item-icon-size  ${
@@ -220,14 +239,23 @@ const AppSidebar: React.FC = () => {
             >
               <ul className="mt-2 space-y-1 ml-9">
                 {nav.subItems.map((subItem) => (
-                  <li key={subItem.name}>
+                  <li key={subItem.name} style={isSMSVerification ? { pointerEvents: 'none' } : {}}>
                     {isSMSVerification ? (
                       <span
-                        className={`menu-dropdown-item cursor-not-allowed opacity-50 pointer-events-none ${
+                        className={`menu-dropdown-item cursor-not-allowed opacity-50 pointer-events-none select-none ${
                           isActive(subItem.path)
                             ? "menu-dropdown-item-active"
                             : "menu-dropdown-item-inactive"
                         }`}
+                        style={{ pointerEvents: 'none', userSelect: 'none' }}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
                       >
                         {subItem.name}
                         <span className="flex items-center gap-1 ml-auto">
