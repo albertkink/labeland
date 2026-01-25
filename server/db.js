@@ -136,6 +136,20 @@ export const initDatabase = async (maxRetries = 15, retryDelay = 3000) => {
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
           );
+
+          CREATE TABLE IF NOT EXISTS labels (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'done', 'cancelled')),
+            decline_reason TEXT,
+            label_data JSONB NOT NULL DEFAULT '{}',
+            files JSONB NOT NULL DEFAULT '[]',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+          );
+          CREATE INDEX IF NOT EXISTS idx_labels_user_id ON labels(user_id);
+          CREATE INDEX IF NOT EXISTS idx_labels_status ON labels(status);
+          CREATE INDEX IF NOT EXISTS idx_labels_created_at ON labels(created_at DESC);
         `);
         console.log("✅ Database initialized successfully");
         return;
@@ -558,6 +572,158 @@ export const deleteBlogPost = async (id) => {
     return result.rows.length > 0;
   } catch (err) {
     console.error("Error deleting blog post:", err);
+    throw err;
+  }
+};
+
+// --- Labels ---
+export const createLabel = async (data) => {
+  try {
+    const { id, userId, labelData } = data;
+    const result = await pool.query(
+      `INSERT INTO labels (id, user_id, status, label_data)
+       VALUES ($1, $2, 'pending', $3::jsonb)
+       RETURNING id, user_id, status, decline_reason, label_data, files, created_at, updated_at`,
+      [id, userId, JSON.stringify(labelData || {})]
+    );
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      userId: row.user_id,
+      status: row.status,
+      declineReason: row.decline_reason,
+      labelData: row.label_data,
+      files: row.files || [],
+      createdAt: row.created_at?.toISOString?.(),
+      updatedAt: row.updated_at?.toISOString?.(),
+    };
+  } catch (err) {
+    console.error("Error creating label:", err);
+    throw err;
+  }
+};
+
+export const getLabelById = async (id) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, user_id as "userId", status, decline_reason as "declineReason",
+              label_data as "labelData", files, created_at as "createdAt", updated_at as "updatedAt"
+       FROM labels WHERE id = $1`,
+      [id]
+    );
+    if (result.rows.length === 0) return null;
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      userId: row.userId,
+      status: row.status,
+      declineReason: row.declineReason,
+      labelData: row.labelData || {},
+      files: Array.isArray(row.files) ? row.files : [],
+      createdAt: row.createdAt?.toISOString?.(),
+      updatedAt: row.updatedAt?.toISOString?.(),
+    };
+  } catch (err) {
+    console.error("Error getting label:", err);
+    throw err;
+  }
+};
+
+export const getLabelsByUserId = async (userId) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, user_id as "userId", status, decline_reason as "declineReason",
+              label_data as "labelData", files, created_at as "createdAt", updated_at as "updatedAt"
+       FROM labels WHERE user_id = $1 ORDER BY created_at DESC`,
+      [userId]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      userId: row.userId,
+      status: row.status,
+      declineReason: row.declineReason,
+      labelData: row.labelData || {},
+      files: Array.isArray(row.files) ? row.files : [],
+      createdAt: row.createdAt?.toISOString?.(),
+      updatedAt: row.updatedAt?.toISOString?.(),
+    }));
+  } catch (err) {
+    console.error("Error getting labels by user:", err);
+    throw err;
+  }
+};
+
+export const getAllLabels = async () => {
+  try {
+    const result = await pool.query(
+      `SELECT l.id, l.user_id as "userId", l.status, l.decline_reason as "declineReason",
+              l.label_data as "labelData", l.files, l.created_at as "createdAt", l.updated_at as "updatedAt",
+              u.username
+       FROM labels l
+       LEFT JOIN users u ON u.id = l.user_id
+       ORDER BY l.created_at DESC`
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      userId: row.userId,
+      username: row.username,
+      status: row.status,
+      declineReason: row.declineReason,
+      labelData: row.labelData || {},
+      files: Array.isArray(row.files) ? row.files : [],
+      createdAt: row.createdAt?.toISOString?.(),
+      updatedAt: row.updatedAt?.toISOString?.(),
+    }));
+  } catch (err) {
+    console.error("Error getting all labels:", err);
+    throw err;
+  }
+};
+
+export const updateLabel = async (id, updates) => {
+  try {
+    const fields = [];
+    const values = [];
+    let paramCount = 1;
+
+    if (updates.status !== undefined) {
+      fields.push(`status = $${paramCount++}`);
+      values.push(updates.status);
+    }
+    if (updates.declineReason !== undefined) {
+      fields.push(`decline_reason = $${paramCount++}`);
+      values.push(updates.declineReason);
+    }
+    if (updates.files !== undefined) {
+      fields.push(`files = $${paramCount++}::jsonb`);
+      values.push(JSON.stringify(Array.isArray(updates.files) ? updates.files : []));
+    }
+
+    if (fields.length === 0) return await getLabelById(id);
+
+    fields.push(`updated_at = CURRENT_TIMESTAMP`);
+    values.push(id);
+
+    const result = await pool.query(
+      `UPDATE labels SET ${fields.join(", ")} WHERE id = $${paramCount}
+       RETURNING id, user_id as "userId", status, decline_reason as "declineReason",
+                 label_data as "labelData", files, created_at as "createdAt", updated_at as "updatedAt"`,
+      values
+    );
+    if (result.rows.length === 0) return null;
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      userId: row.userId,
+      status: row.status,
+      declineReason: row.declineReason,
+      labelData: row.labelData || {},
+      files: Array.isArray(row.files) ? row.files : [],
+      createdAt: row.createdAt?.toISOString?.(),
+      updatedAt: row.updatedAt?.toISOString?.(),
+    };
+  } catch (err) {
+    console.error("Error updating label:", err);
     throw err;
   }
 };
