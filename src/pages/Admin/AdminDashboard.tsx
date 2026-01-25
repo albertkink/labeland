@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PageMeta from "../../components/common/PageMeta";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import ComponentCard from "../../components/common/ComponentCard";
@@ -13,11 +13,24 @@ import {
   TableHeader,
   TableRow,
 } from "../../components/ui/table";
+import { Modal } from "../../components/ui/modal";
 
 type BlogPost = {
   id: string;
   title: string;
   content: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type AdminLabel = {
+  id: string;
+  userId: string;
+  username?: string;
+  status: "pending" | "done" | "cancelled";
+  declineReason?: string | null;
+  labelData: Record<string, unknown>;
+  files: { filename: string; originalName?: string }[];
   createdAt: string;
   updatedAt: string;
 };
@@ -31,10 +44,23 @@ export default function AdminDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [posts, setPosts] = useState<BlogPost[]>([]);
+  const [labels, setLabels] = useState<AdminLabel[]>([]);
 
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  const [doneModal, setDoneModal] = useState<{ open: boolean; labelId: string | null }>({
+    open: false,
+    labelId: null,
+  });
+  const [declineModal, setDeclineModal] = useState<{
+    open: boolean;
+    labelId: string | null;
+    reason: string;
+  }>({ open: false, labelId: null, reason: "" });
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const authedFetch = async (url: string, init?: RequestInit) => {
     const r = await fetch(url, {
@@ -73,9 +99,40 @@ export default function AdminDashboard() {
     }
   };
 
+  const refreshLabels = useCallback(async () => {
+    if (!isAuthed || !token) return;
+    try {
+      const r = await fetch("/api/admin/labels", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const raw = await r.text();
+      let data: unknown = null;
+      try {
+        data = raw ? JSON.parse(raw) : null;
+      } catch {
+        data = null;
+      }
+      if (!r.ok) {
+        const msg =
+          data && typeof data === "object" && "error" in data
+            ? String((data as { error?: unknown }).error)
+            : `Request failed (HTTP ${r.status}).`;
+        throw new Error(msg);
+      }
+      const resp = data as { labels?: AdminLabel[] };
+      setLabels(Array.isArray(resp.labels) ? resp.labels : []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load labels.");
+    }
+  }, [isAuthed, token]);
+
   useEffect(() => {
     void refresh();
   }, [isAuthed]);
+
+  useEffect(() => {
+    void refreshLabels();
+  }, [refreshLabels]);
 
   const resetForm = () => {
     setTitle("");
@@ -149,6 +206,98 @@ export default function AdminDashboard() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to delete post.");
     }
+  };
+
+  const openDoneModal = (labelId: string) => {
+    setDoneModal({ open: true, labelId });
+    setError(null);
+    setInfo(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+  const closeDoneModal = () => setDoneModal({ open: false, labelId: null });
+  const openDeclineModal = (labelId: string) => {
+    setDeclineModal({ open: true, labelId, reason: "" });
+    setError(null);
+    setInfo(null);
+  };
+  const closeDeclineModal = () =>
+    setDeclineModal({ open: false, labelId: null, reason: "" });
+
+  const handleDoneSubmit = async () => {
+    const labelId = doneModal.labelId;
+    if (!labelId || !token) return;
+    const files = fileInputRef.current?.files;
+    if (!files || files.length === 0) {
+      setError("Select at least one file to upload.");
+      return;
+    }
+    setError(null);
+    setInfo(null);
+    setUploading(true);
+    try {
+      const form = new FormData();
+      for (let i = 0; i < files.length; i++) {
+        form.append("files", files[i]);
+      }
+      const r = await fetch(`/api/admin/labels/${encodeURIComponent(labelId)}/done`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      const raw = await r.text();
+      let data: unknown = null;
+      try {
+        data = raw ? JSON.parse(raw) : null;
+      } catch {
+        data = null;
+      }
+      if (!r.ok) {
+        const msg =
+          data && typeof data === "object" && "error" in data
+            ? String((data as { error?: unknown }).error)
+            : `Upload failed (HTTP ${r.status}).`;
+        throw new Error(msg);
+      }
+      setInfo("Label marked as done. Files uploaded.");
+      closeDoneModal();
+      await refreshLabels();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDeclineSubmit = async () => {
+    const labelId = declineModal.labelId;
+    const reason = declineModal.reason.trim();
+    if (!labelId || !token) return;
+    if (!reason) {
+      setError("Please enter a reason why the label cannot be done.");
+      return;
+    }
+    setError(null);
+    setInfo(null);
+    try {
+      await authedFetch(`/api/admin/labels/${encodeURIComponent(labelId)}/decline`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      setInfo("Label declined.");
+      closeDeclineModal();
+      await refreshLabels();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Decline failed.");
+    }
+  };
+
+  const labelSummary = (l: AdminLabel) => {
+    const d = l.labelData as { carrier?: string; service?: string; from?: { name?: string } };
+    const carrier = d?.carrier ?? "—";
+    const service = d?.service ?? "—";
+    const from = d?.from?.name ?? "—";
+    return `${String(carrier).toUpperCase()} • ${service} • ${from}`;
   };
 
   return (
@@ -281,8 +430,151 @@ export default function AdminDashboard() {
               </div>
             </div>
           </ComponentCard>
+
+          <ComponentCard
+            title="Labels"
+            desc="Label requests from users. Use Done to upload documents, or Decline with a reason."
+          >
+            <div className="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
+              <div className="max-w-full overflow-x-auto">
+                <Table>
+                  <TableHeader className="border-b border-gray-100 dark:border-white/[0.05]">
+                    <TableRow>
+                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
+                        User
+                      </TableCell>
+                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
+                        Summary
+                      </TableCell>
+                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
+                        Created
+                      </TableCell>
+                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
+                        Status
+                      </TableCell>
+                      <TableCell isHeader className="px-5 py-3 text-end text-theme-xs font-medium text-gray-500 dark:text-gray-400">
+                        Actions
+                      </TableCell>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
+                    {labels.length === 0 ? (
+                      <TableRow>
+                        <TableCell className="px-5 py-4 text-sm text-gray-600 dark:text-gray-400" colSpan={5}>
+                          No label requests yet.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      labels.map((l) => (
+                        <TableRow key={l.id}>
+                          <TableCell className="px-5 py-4 text-sm text-gray-800 dark:text-white/90">
+                            {l.username ?? l.userId}
+                          </TableCell>
+                          <TableCell className="px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
+                            {labelSummary(l)}
+                          </TableCell>
+                          <TableCell className="px-5 py-4 text-sm text-gray-600 dark:text-gray-400">
+                            {new Date(l.createdAt).toLocaleString()}
+                          </TableCell>
+                          <TableCell className="px-5 py-4 text-sm text-gray-600 dark:text-gray-400">
+                            {l.status}
+                          </TableCell>
+                          <TableCell className="px-5 py-4 text-end">
+                            {l.status === "pending" ? (
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  onClick={() => openDoneModal(l.id)}
+                                >
+                                  Done
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => openDeclineModal(l.id)}
+                                >
+                                  Decline
+                                </Button>
+                              </div>
+                            ) : (
+                              <span className="text-gray-400">—</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          </ComponentCard>
         </div>
       )}
+
+      <Modal
+        isOpen={doneModal.open}
+        onClose={closeDoneModal}
+        className="max-w-[500px] m-4 p-6"
+      >
+        <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
+          Upload documents (Done)
+        </h3>
+        <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+          Upload all files the user will download for this label.
+        </p>
+        <div className="mt-4">
+          <Label>Files</Label>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="mt-2 block w-full text-sm text-gray-600 dark:text-gray-400 file:mr-4 file:rounded-lg file:border-0 file:bg-brand-500 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white file:hover:bg-brand-600"
+            accept="*/*"
+          />
+        </div>
+        <div className="mt-6 flex justify-end gap-2">
+          <Button variant="outline" onClick={closeDoneModal} disabled={uploading}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={() => void handleDoneSubmit()} disabled={uploading}>
+            {uploading ? "Uploading…" : "Upload & mark done"}
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={declineModal.open}
+        onClose={closeDeclineModal}
+        className="max-w-[500px] m-4 p-6"
+      >
+        <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
+          Decline label
+        </h3>
+        <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+          Explain why this label cannot be done. The user will see this message.
+        </p>
+        <div className="mt-4">
+          <Label htmlFor="decline-reason">Reason</Label>
+          <TextArea
+            id="decline-reason"
+            rows={4}
+            placeholder="e.g. Invalid address, missing customs info…"
+            value={declineModal.reason}
+            onChange={(v) =>
+              setDeclineModal((prev) => ({ ...prev, reason: v }))
+            }
+          />
+        </div>
+        <div className="mt-6 flex justify-end gap-2">
+          <Button variant="outline" onClick={closeDeclineModal}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={() => void handleDeclineSubmit()}>
+            Decline
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 }
