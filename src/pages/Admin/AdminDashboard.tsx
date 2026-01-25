@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router";
 import PageMeta from "../../components/common/PageMeta";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import ComponentCard from "../../components/common/ComponentCard";
@@ -47,9 +48,21 @@ type AccountProduct = {
 
 const getToken = () => localStorage.getItem("auth.token") || "";
 
+const getUser = () => {
+  try {
+    const raw = localStorage.getItem("auth.user");
+    return raw ? (JSON.parse(raw) as { isAdmin?: boolean }) : null;
+  } catch {
+    return null;
+  }
+};
+
 export default function AdminDashboard() {
   const token = useMemo(() => getToken(), []);
+  const user = useMemo(() => getUser(), []);
   const isAuthed = Boolean(token);
+  const isAdmin = Boolean(user?.isAdmin);
+  const location = useLocation();
 
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -143,12 +156,19 @@ export default function AdminDashboard() {
   }, [isAuthed, token]);
 
   useEffect(() => {
-    void refresh();
-  }, [isAuthed]);
+    if (isAuthed && isAdmin) void refresh();
+  }, [isAuthed, isAdmin]);
 
   useEffect(() => {
-    void refreshLabels();
-  }, [refreshLabels]);
+    if (isAuthed && isAdmin) void refreshLabels();
+  }, [isAuthed, isAdmin, refreshLabels]);
+
+  useEffect(() => {
+    if (location.hash === "#account-products") {
+      const el = document.getElementById("account-products");
+      el?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [location.hash]);
 
   const refreshAccountProducts = useCallback(async () => {
     if (!isAuthed || !token) return;
@@ -176,8 +196,8 @@ export default function AdminDashboard() {
   }, [isAuthed, token]);
 
   useEffect(() => {
-    void refreshAccountProducts();
-  }, [refreshAccountProducts]);
+    if (isAuthed && isAdmin) void refreshAccountProducts();
+  }, [isAuthed, isAdmin, refreshAccountProducts]);
 
   const resetProductForm = () => {
     setProductService("");
@@ -420,6 +440,17 @@ export default function AdminDashboard() {
             ADMIN_EMAILS on the server to grant admin by email.
           </div>
         </ComponentCard>
+      ) : !isAdmin ? (
+        <ComponentCard
+          title="Admin"
+          desc="Access restricted to administrators."
+        >
+          <div className="text-sm text-gray-600 dark:text-gray-400">
+            You must be an administrator to manage blog posts, labels, and
+            account market items. Contact an admin or set ADMIN_EMAILS on the
+            server to grant access.
+          </div>
+        </ComponentCard>
       ) : (
         <div className="space-y-6">
           {error ? (
@@ -616,8 +647,9 @@ export default function AdminDashboard() {
           </ComponentCard>
 
           <ComponentCard
-            title="Account Products"
-            desc="Add and manage account products for the store."
+            id="account-products"
+            title="Account market"
+            desc="Add and manage items for the Account Store. These products appear on the Accounts for Sale page."
           >
             <div className="space-y-4">
               <div>
