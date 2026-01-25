@@ -7,6 +7,7 @@ import {
   ChevronDownIcon,
   GridIcon,
   HorizontaLDots,
+  PageIcon,
 } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
 
@@ -22,6 +23,14 @@ const allNavItems: NavItem[] = [
     name: "Bug Fix Blog",
     icon: <GridIcon />,
     path: "/",
+  },
+  {
+    name: "Create Label",
+    icon: <PageIcon />,
+    subItems: [
+      { name: "Create Label", path: "/create-label" },
+      { name: "Store with accounts", path: "/store" },
+    ],
   },
   {
     icon: <BoxCubeIcon />,
@@ -91,7 +100,7 @@ const AppSidebar: React.FC = () => {
     if (!submenuMatched) {
       setOpenSubmenu(null);
     }
-  }, [location, isActive]);
+  }, [location, isActive, navItems]);
 
   useEffect(() => {
     if (openSubmenu !== null) {
