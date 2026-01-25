@@ -35,6 +35,16 @@ type AdminLabel = {
   updatedAt: string;
 };
 
+type AccountProduct = {
+  id: string;
+  service: string;
+  informations: string;
+  country: string;
+  priceUsd: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
 const getToken = () => localStorage.getItem("auth.token") || "";
 
 export default function AdminDashboard() {
@@ -45,10 +55,16 @@ export default function AdminDashboard() {
   const [info, setInfo] = useState<string | null>(null);
   const [posts, setPosts] = useState<BlogPost[]>([]);
   const [labels, setLabels] = useState<AdminLabel[]>([]);
+  const [accountProducts, setAccountProducts] = useState<AccountProduct[]>([]);
 
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  const [productService, setProductService] = useState("");
+  const [productInformations, setProductInformations] = useState("");
+  const [productCountry, setProductCountry] = useState("");
+  const [productPriceUsd, setProductPriceUsd] = useState("");
 
   const [doneModal, setDoneModal] = useState<{ open: boolean; labelId: string | null }>({
     open: false,
@@ -133,6 +149,95 @@ export default function AdminDashboard() {
   useEffect(() => {
     void refreshLabels();
   }, [refreshLabels]);
+
+  const refreshAccountProducts = useCallback(async () => {
+    if (!isAuthed || !token) return;
+    try {
+      const r = await fetch("/api/account-products");
+      const raw = await r.text();
+      let data: unknown = null;
+      try {
+        data = raw ? JSON.parse(raw) : null;
+      } catch {
+        data = null;
+      }
+      if (!r.ok) {
+        const msg =
+          data && typeof data === "object" && "error" in data
+            ? String((data as { error?: unknown }).error)
+            : `Request failed (HTTP ${r.status}).`;
+        throw new Error(msg);
+      }
+      const resp = data as { products?: AccountProduct[] };
+      setAccountProducts(Array.isArray(resp.products) ? resp.products : []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load account products.");
+    }
+  }, [isAuthed, token]);
+
+  useEffect(() => {
+    void refreshAccountProducts();
+  }, [refreshAccountProducts]);
+
+  const resetProductForm = () => {
+    setProductService("");
+    setProductInformations("");
+    setProductCountry("");
+    setProductPriceUsd("");
+  };
+
+  const handleCreateProduct = async () => {
+    setError(null);
+    setInfo(null);
+    const service = productService.trim();
+    const country = productCountry.trim();
+    const priceUsd = Number(productPriceUsd);
+
+    if (!service) {
+      setError("Service is required.");
+      return;
+    }
+    if (!country) {
+      setError("Country is required.");
+      return;
+    }
+    if (!Number.isFinite(priceUsd) || priceUsd <= 0) {
+      setError("Valid price is required.");
+      return;
+    }
+
+    try {
+      await authedFetch("/api/admin/account-products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          service,
+          informations: productInformations.trim(),
+          country,
+          priceUsd,
+        }),
+      });
+      setInfo("Account product created.");
+      resetProductForm();
+      await refreshAccountProducts();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create product.");
+    }
+  };
+
+  const handleDeleteProduct = async (id: string) => {
+    setError(null);
+    setInfo(null);
+    try {
+      await authedFetch(`/api/admin/account-products/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      setInfo("Product deleted.");
+      await refreshAccountProducts();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete product.");
+    }
+  };
 
   const resetForm = () => {
     setTitle("");
@@ -500,6 +605,128 @@ export default function AdminDashboard() {
                             ) : (
                               <span className="text-gray-400">—</span>
                             )}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          </ComponentCard>
+
+          <ComponentCard
+            title="Account Products"
+            desc="Add and manage account products for the store."
+          >
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="product-service">Service *</Label>
+                <Input
+                  id="product-service"
+                  placeholder="e.g. FedEx Account"
+                  value={productService}
+                  onChange={(e) => setProductService(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="product-informations">Informations</Label>
+                <TextArea
+                  id="product-informations"
+                  rows={3}
+                  placeholder="Additional information about the account..."
+                  value={productInformations}
+                  onChange={(v) => setProductInformations(v)}
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <Label htmlFor="product-country">Country *</Label>
+                  <Input
+                    id="product-country"
+                    placeholder="e.g. United States"
+                    value={productCountry}
+                    onChange={(e) => setProductCountry(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="product-price">Price (USD) *</Label>
+                  <Input
+                    id="product-price"
+                    type="number"
+                    min="0"
+                    step={0.01}
+                    placeholder="0.00"
+                    value={productPriceUsd}
+                    onChange={(e) => setProductPriceUsd(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="primary" onClick={handleCreateProduct}>
+                  Add product
+                </Button>
+                <Button variant="outline" onClick={resetProductForm}>
+                  Clear
+                </Button>
+                <Button variant="outline" onClick={() => void refreshAccountProducts()}>
+                  Refresh
+                </Button>
+              </div>
+            </div>
+
+            <div className="mt-6 overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
+              <div className="max-w-full overflow-x-auto">
+                <Table>
+                  <TableHeader className="border-b border-gray-100 dark:border-white/[0.05]">
+                    <TableRow>
+                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
+                        Service
+                      </TableCell>
+                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
+                        Informations
+                      </TableCell>
+                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
+                        Country
+                      </TableCell>
+                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
+                        Price
+                      </TableCell>
+                      <TableCell isHeader className="px-5 py-3 text-end text-theme-xs font-medium text-gray-500 dark:text-gray-400">
+                        Actions
+                      </TableCell>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
+                    {accountProducts.length === 0 ? (
+                      <TableRow>
+                        <TableCell className="px-5 py-4 text-sm text-gray-600 dark:text-gray-400" colSpan={5}>
+                          No account products yet.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      accountProducts.map((p) => (
+                        <TableRow key={p.id}>
+                          <TableCell className="px-5 py-4 text-sm text-gray-800 dark:text-white/90">
+                            {p.service}
+                          </TableCell>
+                          <TableCell className="px-5 py-4 text-sm text-gray-600 dark:text-gray-400">
+                            {p.informations || "—"}
+                          </TableCell>
+                          <TableCell className="px-5 py-4 text-sm text-gray-600 dark:text-gray-400">
+                            {p.country}
+                          </TableCell>
+                          <TableCell className="px-5 py-4 text-sm text-gray-600 dark:text-gray-400">
+                            ${p.priceUsd.toFixed(2)}
+                          </TableCell>
+                          <TableCell className="px-5 py-4 text-end">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDeleteProduct(p.id)}
+                            >
+                              Delete
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))
