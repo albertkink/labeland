@@ -1284,9 +1284,6 @@ const SMSPOOL_API_BASE = "https://api.smspool.net";
 const smspoolRequest = async (endpoint, options = {}) => {
   const url = new URL(`${SMSPOOL_API_BASE}${endpoint}`);
   
-  // Add API key as query parameter (SMSPool uses this method)
-  url.searchParams.set("api_key", SMSPOOL_API_KEY);
-  
   // If there are additional query params in options, add them
   if (options.query) {
     for (const [key, value] of Object.entries(options.query)) {
@@ -1298,6 +1295,7 @@ const smspoolRequest = async (endpoint, options = {}) => {
     method: options.method || "GET",
     headers: {
       "Content-Type": "application/json",
+      "Authorization": `Bearer ${SMSPOOL_API_KEY}`,
       ...(options.headers || {}),
     },
   };
@@ -1319,7 +1317,14 @@ const smspoolRequest = async (endpoint, options = {}) => {
     } catch {
       errorData = { error: errorText || `HTTP ${response.status}` };
     }
-    throw new Error(errorData.error || errorData.message || errorData.msg || `API request failed: ${response.status}`);
+    const errorMessage = errorData.error || errorData.message || errorData.msg || `API request failed: ${response.status}`;
+    console.error(`[SMSPool API] Request failed: ${url.toString()}`, {
+      status: response.status,
+      statusText: response.statusText,
+      error: errorMessage,
+      response: errorText.substring(0, 500), // First 500 chars of response
+    });
+    throw new Error(errorMessage);
   }
   
   return await response.json();
@@ -1354,6 +1359,7 @@ app.get("/api/sms-verification/services", requireAuth, async (_req, res) => {
     
     return res.json({ ok: true, services });
   } catch (err) {
+    console.error("[SMS Verification] Error fetching services:", err);
     return res.status(500).json({
       ok: false,
       error: err instanceof Error ? err.message : "Unknown error",
@@ -1381,6 +1387,7 @@ app.get("/api/sms-verification/countries", requireAuth, async (_req, res) => {
     
     return res.json({ ok: true, countries });
   } catch (err) {
+    console.error("[SMS Verification] Error fetching countries:", err);
     return res.status(500).json({
       ok: false,
       error: err instanceof Error ? err.message : "Unknown error",
@@ -1411,6 +1418,7 @@ app.get("/api/sms-verification/rental-countries", requireAuth, async (_req, res)
     
     return res.json({ ok: true, countries });
   } catch (err) {
+    console.error("[SMS Verification] Error fetching rental countries:", err);
     return res.status(500).json({
       ok: false,
       error: err instanceof Error ? err.message : "Unknown error",
@@ -1529,6 +1537,7 @@ app.get("/api/sms-verification/temporary-numbers", requireAuth, async (req, res)
     
     return res.json({ ok: true, numbers });
   } catch (err) {
+    console.error("[SMS Verification] Error fetching temporary numbers:", err);
     return res.status(500).json({
       ok: false,
       error: err instanceof Error ? err.message : "Unknown error",
@@ -1616,6 +1625,7 @@ app.get("/api/sms-verification/rentals", requireAuth, async (req, res) => {
     
     return res.json({ ok: true, rentals });
   } catch (err) {
+    console.error("[SMS Verification] Error fetching rentals:", err);
     return res.status(500).json({
       ok: false,
       error: err instanceof Error ? err.message : "Unknown error",
