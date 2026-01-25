@@ -12,6 +12,11 @@ import {
   createUser,
   updateUser,
   hasAnyAdmin,
+  getAllBlogPosts,
+  getBlogPostById,
+  createBlogPost,
+  updateBlogPost,
+  deleteBlogPost,
 } from "./db.js";
 
 const PORT = 8080;
@@ -51,13 +56,10 @@ const CREDIT_LEDGER_FILE =
   process.env.CREDIT_LEDGER_FILE ||
   path.resolve(process.cwd(), "data", "credit-ledger.txt");
 
-// Orders + products
+// Orders
 const ORDERS_JSON_FILE =
   process.env.ORDERS_JSON_FILE ||
   path.resolve(process.cwd(), "data", "orders.json");
-const ACCOUNT_PRODUCTS_FILE =
-  process.env.ACCOUNT_PRODUCTS_FILE ||
-  path.resolve(process.cwd(), "data", "account-products.json");
 
 const ORDERS_FILE =
   process.env.COINBASE_ORDERS_FILE ||
@@ -343,25 +345,6 @@ const upsertOrder = async (order) => {
   else orders.push(order);
   await writeOrders(orders);
   return order;
-};
-
-const readAccountProducts = async () => {
-  try {
-    const raw = await fs.readFile(ACCOUNT_PRODUCTS_FILE, "utf8");
-    const data = safeJsonParse(raw);
-    return Array.isArray(data) ? data : [];
-  } catch {
-    return [];
-  }
-};
-
-const writeAccountProducts = async (products) => {
-  await fs.mkdir(path.dirname(ACCOUNT_PRODUCTS_FILE), { recursive: true });
-  await fs.writeFile(
-    ACCOUNT_PRODUCTS_FILE,
-    JSON.stringify(products, null, 2),
-    "utf8",
-  );
 };
 
 app.get("/api/wallet/balance", requireAuth, async (req, res) => {
@@ -874,60 +857,88 @@ app.post(
   },
 );
 
-// Public products list for the marketplace
-app.get("/api/account-products", async (_req, res) => {
-  const products = await readAccountProducts();
-  const enabled = products.filter((p) => p && p.enabled !== false);
-  return res.json({ ok: true, products: enabled });
+// Bug Fix Blog (public)
+app.get("/api/blog", async (_req, res) => {
+  try {
+    const posts = await getAllBlogPosts();
+    return res.json({ ok: true, posts });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Unknown error",
+    });
+  }
 });
 
-// Admin: list/create products
-app.get("/api/admin/account-products", requireAuth, requireAdmin, async (_req, res) => {
-  const products = await readAccountProducts();
-  return res.json({ ok: true, products });
+app.get("/api/blog/:id", async (req, res) => {
+  try {
+    const id = String(req.params.id || "");
+    const post = await getBlogPostById(id);
+    if (!post) return res.status(404).json({ ok: false, error: "Not found." });
+    return res.json({ ok: true, post });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Unknown error",
+    });
+  }
+});
+
+// Admin: blog CRUD
+app.get("/api/admin/blog", requireAuth, requireAdmin, async (_req, res) => {
+  try {
+    const posts = await getAllBlogPosts();
+    return res.json({ ok: true, posts });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Unknown error",
+    });
+  }
 });
 
 app.post(
-  "/api/admin/account-products",
+  "/api/admin/blog",
   requireAuth,
   requireAdmin,
   express.json(),
   async (req, res) => {
     try {
       const body = req.body ?? {};
-      const productName = String(body.productName ?? "").trim();
-      const priceUsd = Number(body.priceUsd);
-      const country = String(body.country ?? "").trim();
-      const numberOfShipments = Number(body.numberOfShipments);
+      const title = String(body.title ?? "").trim();
+      const content = String(body.content ?? "").trim();
+      if (!title) {
+        return res.status(400).json({ ok: false, error: "title required." });
+      }
+      const id = crypto.randomUUID();
+      const post = await createBlogPost({ id, title, content });
+      return res.json({ ok: true, post });
+    } catch (err) {
+      return res.status(500).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
+  },
+);
 
-      if (!productName) {
-        return res.status(400).json({ ok: false, error: "productName required." });
+app.put(
+  "/api/admin/blog/:id",
+  requireAuth,
+  requireAdmin,
+  express.json(),
+  async (req, res) => {
+    try {
+      const id = String(req.params.id || "");
+      const body = req.body ?? {};
+      const title = String(body.title ?? "").trim();
+      const content = String(body.content ?? "").trim();
+      if (!title) {
+        return res.status(400).json({ ok: false, error: "title required." });
       }
-      if (!Number.isFinite(priceUsd) || priceUsd <= 0) {
-        return res.status(400).json({ ok: false, error: "priceUsd must be > 0." });
-      }
-      if (!country) {
-        return res.status(400).json({ ok: false, error: "country required." });
-      }
-      if (!Number.isFinite(numberOfShipments) || numberOfShipments < 0) {
-        return res
-          .status(400)
-          .json({ ok: false, error: "numberOfShipments must be >= 0." });
-      }
-
-      const products = await readAccountProducts();
-      const product = {
-        id: crypto.randomUUID(),
-        createdAt: new Date().toISOString(),
-        enabled: true,
-        productName,
-        priceUsd: Number(priceUsd.toFixed(2)),
-        country,
-        numberOfShipments: Math.floor(numberOfShipments),
-      };
-      products.unshift(product);
-      await writeAccountProducts(products);
-      return res.json({ ok: true, product });
+      const post = await updateBlogPost(id, { title, content });
+      if (!post) return res.status(404).json({ ok: false, error: "Not found." });
+      return res.json({ ok: true, post });
     } catch (err) {
       return res.status(500).json({
         ok: false,
@@ -938,19 +949,25 @@ app.post(
 );
 
 app.delete(
-  "/api/admin/account-products/:id",
+  "/api/admin/blog/:id",
   requireAuth,
   requireAdmin,
   async (req, res) => {
-    const id = String(req.params.id || "");
-    const products = await readAccountProducts();
-    const next = products.filter((p) => String(p.id) !== id);
-    await writeAccountProducts(next);
-    return res.json({ ok: true });
+    try {
+      const id = String(req.params.id || "");
+      const deleted = await deleteBlogPost(id);
+      if (!deleted) return res.status(404).json({ ok: false, error: "Not found." });
+      return res.json({ ok: true });
+    } catch (err) {
+      return res.status(500).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
   },
 );
 
-// Admin: orders
+// Admin: orders (kept for potential use)
 app.get("/api/admin/orders", requireAuth, requireAdmin, async (_req, res) => {
   const orders = await readOrders();
   orders.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
