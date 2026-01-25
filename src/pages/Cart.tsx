@@ -205,7 +205,7 @@ export default function Cart() {
 
   return (
     <div>
-      <PageMeta title="Cart | Labelz" description="Your purchased labels cart." />
+      <PageMeta title="Cart | Label Land" description="Your purchased labels cart." />
       <PageBreadcrumb pageTitle="Cart" />
 
       <ComponentCard
