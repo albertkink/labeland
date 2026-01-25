@@ -24,6 +24,9 @@ import {
   getLabelsByUserId,
   getAllLabels,
   updateLabel,
+  getAllAccountProducts,
+  createAccountProduct,
+  deleteAccountProduct,
 } from "./db.js";
 
 const PORT = 8080;
@@ -1016,6 +1019,77 @@ app.delete("/api/admin/orders/:orderId", requireAuth, requireAdmin, async (req, 
   await writeOrders(next);
   return res.json({ ok: true });
 });
+
+// Account Products (public GET, admin POST/DELETE)
+app.get("/api/account-products", async (_req, res) => {
+  try {
+    const products = await getAllAccountProducts();
+    return res.json({ ok: true, products });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Unknown error",
+    });
+  }
+});
+
+app.post(
+  "/api/admin/account-products",
+  requireAuth,
+  requireAdmin,
+  express.json(),
+  async (req, res) => {
+    try {
+      const body = req.body ?? {};
+      const service = String(body.service ?? "").trim();
+      const informations = String(body.informations ?? "").trim();
+      const country = String(body.country ?? "").trim();
+      const priceUsd = Number(body.priceUsd ?? 0);
+
+      if (!service) {
+        return res.status(400).json({ ok: false, error: "service required." });
+      }
+      if (!country) {
+        return res.status(400).json({ ok: false, error: "country required." });
+      }
+      if (!Number.isFinite(priceUsd) || priceUsd <= 0) {
+        return res.status(400).json({ ok: false, error: "valid priceUsd required." });
+      }
+
+      const product = await createAccountProduct({
+        service,
+        informations,
+        country,
+        priceUsd,
+      });
+      return res.json({ ok: true, product });
+    } catch (err) {
+      return res.status(500).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
+  },
+);
+
+app.delete(
+  "/api/admin/account-products/:id",
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const id = String(req.params.id || "");
+      const deleted = await deleteAccountProduct(id);
+      if (!deleted) return res.status(404).json({ ok: false, error: "Not found." });
+      return res.json({ ok: true });
+    } catch (err) {
+      return res.status(500).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
+  },
+);
 
 // --- Labels (user) ---
 app.post("/api/labels", requireAuth, express.json(), async (req, res) => {
