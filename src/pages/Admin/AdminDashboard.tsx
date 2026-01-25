@@ -4,6 +4,7 @@ import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import ComponentCard from "../../components/common/ComponentCard";
 import Label from "../../components/form/Label";
 import Input from "../../components/form/input/InputField";
+import TextArea from "../../components/form/input/TextArea";
 import Button from "../../components/ui/button/Button";
 import {
   Table,
@@ -13,25 +14,12 @@ import {
   TableRow,
 } from "../../components/ui/table";
 
-type AccountProduct = {
+type BlogPost = {
   id: string;
+  title: string;
+  content: string;
   createdAt: string;
-  enabled: boolean;
-  productName: string;
-  priceUsd: number;
-  country: string;
-  numberOfShipments: number;
-};
-
-type Order = {
-  orderId: string;
-  createdAt: string;
-  status: "pending" | "paid" | string;
-  paymentMethod: "coinbase" | "credits" | string;
-  totalUsd?: number;
-  currency?: string;
-  items?: unknown[];
-  user?: { id: string; email: string } | null;
+  updatedAt: string;
 };
 
 const getToken = () => localStorage.getItem("auth.token") || "";
@@ -42,14 +30,11 @@ export default function AdminDashboard() {
 
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [posts, setPosts] = useState<BlogPost[]>([]);
 
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [products, setProducts] = useState<AccountProduct[]>([]);
-
-  const [productName, setProductName] = useState("");
-  const [priceUsd, setPriceUsd] = useState("");
-  const [country, setCountry] = useState("");
-  const [numberOfShipments, setNumberOfShipments] = useState("");
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const authedFetch = async (url: string, init?: RequestInit) => {
     const r = await fetch(url, {
@@ -81,100 +66,94 @@ export default function AdminDashboard() {
     setInfo(null);
     if (!isAuthed) return;
     try {
-      const ordersResp = (await authedFetch("/api/admin/orders")) as {
-        orders?: unknown;
-      };
-      const productsResp = (await authedFetch("/api/admin/account-products")) as {
-        products?: unknown;
-      };
-      setOrders(Array.isArray(ordersResp.orders) ? (ordersResp.orders as Order[]) : []);
-      setProducts(
-        Array.isArray(productsResp.products)
-          ? (productsResp.products as AccountProduct[])
-          : [],
-      );
+      const resp = (await authedFetch("/api/admin/blog")) as { posts?: BlogPost[] };
+      setPosts(Array.isArray(resp.posts) ? resp.posts : []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load admin data.");
+      setError(e instanceof Error ? e.message : "Failed to load blog.");
     }
   };
 
   useEffect(() => {
     void refresh();
-    // token intentionally stable from memo
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isAuthed]);
 
-  const handleAddProduct = async () => {
+  const resetForm = () => {
+    setTitle("");
+    setContent("");
+    setEditingId(null);
+  };
+
+  const handleCreate = async () => {
     setError(null);
     setInfo(null);
+    const t = title.trim();
+    if (!t) {
+      setError("Title is required.");
+      return;
+    }
     try {
-      const payload = {
-        productName: productName.trim(),
-        priceUsd: Number(priceUsd),
-        country: country.trim(),
-        numberOfShipments: Number(numberOfShipments),
-      };
-      const data = (await authedFetch("/api/admin/account-products", {
+      await authedFetch("/api/admin/blog", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      })) as { product?: AccountProduct };
-      setInfo(`Added "${data.product?.productName ?? payload.productName}".`);
-      setProductName("");
-      setPriceUsd("");
-      setCountry("");
-      setNumberOfShipments("");
+        body: JSON.stringify({ title: t, content: content.trim() }),
+      });
+      setInfo("Post created.");
+      resetForm();
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to add product.");
+      setError(e instanceof Error ? e.message : "Failed to create post.");
     }
   };
 
-  const handleDeleteProduct = async (id: string) => {
+  const handleEdit = (post: BlogPost) => {
+    setTitle(post.title);
+    setContent(post.content);
+    setEditingId(post.id);
+    setError(null);
+    setInfo(null);
+  };
+
+  const handleUpdate = async () => {
+    setError(null);
+    setInfo(null);
+    if (!editingId) return;
+    const t = title.trim();
+    if (!t) {
+      setError("Title is required.");
+      return;
+    }
+    try {
+      await authedFetch(`/api/admin/blog/${encodeURIComponent(editingId)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: t, content: content.trim() }),
+      });
+      setInfo("Post updated.");
+      resetForm();
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to update post.");
+    }
+  };
+
+  const handleDelete = async (id: string) => {
     setError(null);
     setInfo(null);
     try {
-      await authedFetch(`/api/admin/account-products/${encodeURIComponent(id)}`, {
+      await authedFetch(`/api/admin/blog/${encodeURIComponent(id)}`, {
         method: "DELETE",
       });
-      setInfo("Product deleted.");
+      setInfo("Post deleted.");
+      if (editingId === id) resetForm();
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to delete product.");
+      setError(e instanceof Error ? e.message : "Failed to delete post.");
     }
-  };
-
-  const handleDeleteOrder = async (orderId: string) => {
-    setError(null);
-    setInfo(null);
-    try {
-      await authedFetch(`/api/admin/orders/${encodeURIComponent(orderId)}`, {
-        method: "DELETE",
-      });
-      setInfo("Order deleted.");
-      await refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to delete order.");
-    }
-  };
-
-  const orderStats = (o: Order) => {
-    const items = Array.isArray(o.items) ? o.items : [];
-    let labels = 0;
-    let accounts = 0;
-    for (const it of items) {
-      if (it && typeof it === "object" && "kind" in it) {
-        const kind = String((it as { kind?: unknown }).kind || "");
-        if (kind === "label") labels += 1;
-        if (kind === "account") accounts += 1;
-      }
-    }
-    return { labels, accounts, totalItems: items.length };
   };
 
   return (
     <div>
-      <PageMeta title="Admin | Labelz" description="Admin dashboard" />
+      <PageMeta title="Admin | Labelz" description="Bug fix blog admin" />
       <PageBreadcrumb pageTitle="Admin" />
 
       {!isAuthed ? (
@@ -184,7 +163,7 @@ export default function AdminDashboard() {
         >
           <div className="text-sm text-gray-600 dark:text-gray-400">
             Please sign in. The first account is admin by default, or set
-            `ADMIN_EMAILS` on the server to grant admin by email.
+            ADMIN_EMAILS on the server to grant admin by email.
           </div>
         </ComponentCard>
       ) : (
@@ -201,150 +180,45 @@ export default function AdminDashboard() {
           ) : null}
 
           <ComponentCard
-            title="Orders (Labels + Accounts)"
-            desc="All purchases created via Coinbase or Credits."
+            title="Bug Fix Blog"
+            desc="Create, edit, and remove blog posts. Shown on the main page."
           >
-            <div className="mb-4 flex justify-end">
-              <Button variant="outline" onClick={refresh}>
-                Refresh
-              </Button>
-            </div>
-
-            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
-              <div className="max-w-full overflow-x-auto">
-                <Table>
-                  <TableHeader className="border-b border-gray-100 dark:border-white/[0.05]">
-                    <TableRow>
-                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
-                        Order ID
-                      </TableCell>
-                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
-                        Status
-                      </TableCell>
-                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
-                        Payment
-                      </TableCell>
-                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
-                        Items
-                      </TableCell>
-                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
-                        Total
-                      </TableCell>
-                      <TableCell isHeader className="px-5 py-3 text-end text-theme-xs font-medium text-gray-500 dark:text-gray-400">
-                        Action
-                      </TableCell>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
-                    {orders.length === 0 ? (
-                      <TableRow>
-                        <TableCell className="px-5 py-4 text-sm text-gray-600 dark:text-gray-400">
-                          No orders yet.
-                        </TableCell>
-                        <TableCell className="px-5 py-4">&nbsp;</TableCell>
-                        <TableCell className="px-5 py-4">&nbsp;</TableCell>
-                        <TableCell className="px-5 py-4">&nbsp;</TableCell>
-                        <TableCell className="px-5 py-4">&nbsp;</TableCell>
-                        <TableCell className="px-5 py-4">&nbsp;</TableCell>
-                      </TableRow>
-                    ) : (
-                      orders.map((o) => {
-                        const s = orderStats(o);
-                        return (
-                          <TableRow key={o.orderId}>
-                            <TableCell className="px-5 py-4 text-sm text-gray-800 dark:text-white/90">
-                              {o.orderId}
-                              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                {new Date(o.createdAt).toLocaleString()}
-                              </div>
-                              {o.user?.email ? (
-                                <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                  {o.user.email}
-                                </div>
-                              ) : null}
-                            </TableCell>
-                            <TableCell className="px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
-                              {o.status}
-                            </TableCell>
-                            <TableCell className="px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
-                              {o.paymentMethod}
-                            </TableCell>
-                            <TableCell className="px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
-                              {s.totalItems} (labels: {s.labels}, accounts: {s.accounts})
-                            </TableCell>
-                            <TableCell className="px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
-                              {typeof o.totalUsd === "number"
-                                ? `$${o.totalUsd.toFixed(2)}`
-                                : "—"}
-                            </TableCell>
-                            <TableCell className="px-5 py-4 text-end">
-                              <Button
-                                variant="outline"
-                                onClick={() => handleDeleteOrder(o.orderId)}
-                              >
-                                Delete
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-          </ComponentCard>
-
-          <ComponentCard
-            title="Account Store Products"
-            desc="Add products that appear in Accounts Store."
-          >
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <div className="xl:col-span-2">
-                <Label htmlFor="productName">Product Name</Label>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="blog-title">Title</Label>
                 <Input
-                  id="productName"
-                  placeholder="FedEx Account (Starter)"
-                  value={productName}
-                  onChange={(e) => setProductName(e.target.value)}
+                  id="blog-title"
+                  placeholder="Bug fix: XYZ"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
                 />
               </div>
               <div>
-                <Label htmlFor="priceUsd">Price (USD)</Label>
-                <Input
-                  id="priceUsd"
-                  type="number"
-                  min="0"
-                  step={0.01}
-                  placeholder="49"
-                  value={priceUsd}
-                  onChange={(e) => setPriceUsd(e.target.value)}
+                <Label htmlFor="blog-content">Content</Label>
+                <TextArea
+                  rows={6}
+                  placeholder="Describe the fix..."
+                  value={content}
+                  onChange={(v) => setContent(v)}
                 />
               </div>
-              <div>
-                <Label htmlFor="country">Country</Label>
-                <Input
-                  id="country"
-                  placeholder="United States"
-                  value={country}
-                  onChange={(e) => setCountry(e.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="shipments">Number of Shipments</Label>
-                <Input
-                  id="shipments"
-                  type="number"
-                  min="0"
-                  step={1}
-                  placeholder="25"
-                  value={numberOfShipments}
-                  onChange={(e) => setNumberOfShipments(e.target.value)}
-                />
-              </div>
-              <div className="flex items-end">
-                <Button variant="primary" onClick={handleAddProduct}>
-                  Add Product
+              <div className="flex flex-wrap gap-2">
+                {editingId ? (
+                  <>
+                    <Button variant="primary" onClick={handleUpdate}>
+                      Save changes
+                    </Button>
+                    <Button variant="outline" onClick={resetForm}>
+                      Cancel
+                    </Button>
+                  </>
+                ) : (
+                  <Button variant="primary" onClick={handleCreate}>
+                    Add post
+                  </Button>
+                )}
+                <Button variant="outline" onClick={() => void refresh()}>
+                  Refresh
                 </Button>
               </div>
             </div>
@@ -355,55 +229,49 @@ export default function AdminDashboard() {
                   <TableHeader className="border-b border-gray-100 dark:border-white/[0.05]">
                     <TableRow>
                       <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
-                        Product Name
+                        Title
                       </TableCell>
                       <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
-                        Price
-                      </TableCell>
-                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
-                        Country
-                      </TableCell>
-                      <TableCell isHeader className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">
-                        Shipments
+                        Updated
                       </TableCell>
                       <TableCell isHeader className="px-5 py-3 text-end text-theme-xs font-medium text-gray-500 dark:text-gray-400">
-                        Action
+                        Actions
                       </TableCell>
                     </TableRow>
                   </TableHeader>
                   <TableBody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
-                    {products.length === 0 ? (
+                    {posts.length === 0 ? (
                       <TableRow>
                         <TableCell className="px-5 py-4 text-sm text-gray-600 dark:text-gray-400">
-                          No products yet.
+                          No posts yet.
                         </TableCell>
-                        <TableCell className="px-5 py-4">&nbsp;</TableCell>
-                        <TableCell className="px-5 py-4">&nbsp;</TableCell>
                         <TableCell className="px-5 py-4">&nbsp;</TableCell>
                         <TableCell className="px-5 py-4">&nbsp;</TableCell>
                       </TableRow>
                     ) : (
-                      products.map((p) => (
+                      posts.map((p) => (
                         <TableRow key={p.id}>
                           <TableCell className="px-5 py-4 text-sm text-gray-800 dark:text-white/90">
-                            {p.productName}
+                            {p.title}
                           </TableCell>
-                          <TableCell className="px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
-                            ${p.priceUsd.toFixed(2)}
-                          </TableCell>
-                          <TableCell className="px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
-                            {p.country}
-                          </TableCell>
-                          <TableCell className="px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
-                            {p.numberOfShipments}
+                          <TableCell className="px-5 py-4 text-sm text-gray-600 dark:text-gray-400">
+                            {new Date(p.updatedAt).toLocaleString()}
                           </TableCell>
                           <TableCell className="px-5 py-4 text-end">
-                            <Button
-                              variant="outline"
-                              onClick={() => handleDeleteProduct(p.id)}
-                            >
-                              Delete
-                            </Button>
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                variant="outline"
+                                onClick={() => handleEdit(p)}
+                              >
+                                Edit
+                              </Button>
+                              <Button
+                                variant="outline"
+                                onClick={() => handleDelete(p.id)}
+                              >
+                                Delete
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))
@@ -418,4 +286,3 @@ export default function AdminDashboard() {
     </div>
   );
 }
-
