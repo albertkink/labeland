@@ -150,6 +150,18 @@ export const initDatabase = async (maxRetries = 15, retryDelay = 3000) => {
           CREATE INDEX IF NOT EXISTS idx_labels_user_id ON labels(user_id);
           CREATE INDEX IF NOT EXISTS idx_labels_status ON labels(status);
           CREATE INDEX IF NOT EXISTS idx_labels_created_at ON labels(created_at DESC);
+
+          CREATE TABLE IF NOT EXISTS account_products (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            service VARCHAR(255) NOT NULL,
+            informations TEXT,
+            country VARCHAR(100) NOT NULL,
+            price_usd DECIMAL(10, 2) NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+          );
+          CREATE INDEX IF NOT EXISTS idx_account_products_country ON account_products(country);
+          CREATE INDEX IF NOT EXISTS idx_account_products_price ON account_products(price_usd);
         `);
         console.log("✅ Database initialized successfully");
         return;
@@ -724,6 +736,73 @@ export const updateLabel = async (id, updates) => {
     };
   } catch (err) {
     console.error("Error updating label:", err);
+    throw err;
+  }
+};
+
+// Account Products functions
+export const getAllAccountProducts = async () => {
+  try {
+    const result = await pool.query(
+      `SELECT id, service, informations, country, price_usd as "priceUsd",
+              created_at as "createdAt", updated_at as "updatedAt"
+       FROM account_products ORDER BY created_at DESC`
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      service: row.service,
+      informations: row.informations || "",
+      country: row.country,
+      priceUsd: Number(row.priceUsd || 0),
+      createdAt: row.createdAt?.toISOString(),
+      updatedAt: row.updatedAt?.toISOString(),
+    }));
+  } catch (err) {
+    console.error("Error getting all account products:", err);
+    throw err;
+  }
+};
+
+export const createAccountProduct = async (data) => {
+  try {
+    const result = await pool.query(
+      `INSERT INTO account_products (service, informations, country, price_usd)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, service, informations, country, price_usd as "priceUsd",
+                 created_at as "createdAt", updated_at as "updatedAt"`,
+      [
+        String(data.service || ""),
+        String(data.informations || ""),
+        String(data.country || ""),
+        Number(data.priceUsd || 0),
+      ]
+    );
+    if (result.rows.length === 0) return null;
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      service: row.service,
+      informations: row.informations || "",
+      country: row.country,
+      priceUsd: Number(row.priceUsd || 0),
+      createdAt: row.createdAt?.toISOString(),
+      updatedAt: row.updatedAt?.toISOString(),
+    };
+  } catch (err) {
+    console.error("Error creating account product:", err);
+    throw err;
+  }
+};
+
+export const deleteAccountProduct = async (id) => {
+  try {
+    const result = await pool.query(
+      `DELETE FROM account_products WHERE id = $1 RETURNING id`,
+      [id]
+    );
+    return result.rows.length > 0;
+  } catch (err) {
+    console.error("Error deleting account product:", err);
     throw err;
   }
 };
