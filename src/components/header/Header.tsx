@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { ThemeToggleButton } from "../common/ThemeToggleButton";
 import UserDropdown from "./UserDropdown";
 import { Link } from "react-router";
@@ -12,6 +12,43 @@ interface HeaderProps {
 const Header: React.FC<HeaderProps> = ({ onClick, onToggle }) => {
   const [isApplicationMenuOpen, setApplicationMenuOpen] = useState(false);
   const { count } = useCart();
+  const [creditBalance, setCreditBalance] = useState<number | null>(null);
+
+  const token = useMemo(() => localStorage.getItem("auth.token") || "", []);
+  const isAuthed = Boolean(token);
+
+  const refreshBalance = async () => {
+    if (!isAuthed) return;
+    try {
+      const r = await fetch("/api/wallet/balance", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const raw = await r.text();
+      let data: unknown = null;
+      try {
+        data = raw ? JSON.parse(raw) : null;
+      } catch {
+        data = null;
+      }
+      if (r.ok) {
+        const balance =
+          data && typeof data === "object"
+            ? (data as { balance?: unknown }).balance
+            : null;
+        if (typeof balance === "number") {
+          setCreditBalance(balance);
+        }
+      }
+    } catch {
+      // Silently fail - balance just won't show
+    }
+  };
+
+  useEffect(() => {
+    if (isAuthed) void refreshBalance();
+    // token is intentionally stable from memo on initial load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthed]);
 
   const toggleApplicationMenu = () => {
     setApplicationMenuOpen(!isApplicationMenuOpen);
@@ -112,39 +149,6 @@ const Header: React.FC<HeaderProps> = ({ onClick, onToggle }) => {
             </svg>
           </button>
 
-          <div className="hidden lg:block">
-            <form action="https://formbold.com/s/unique_form_id" method="POST">
-              <div className="relative">
-                <button className="absolute -translate-y-1/2 left-4 top-1/2">
-                  <svg
-                    className="fill-gray-500 dark:fill-gray-400"
-                    width="20"
-                    height="20"
-                    viewBox="0 0 20 20"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      clipRule="evenodd"
-                      d="M3.04175 9.37363C3.04175 5.87693 5.87711 3.04199 9.37508 3.04199C12.8731 3.04199 15.7084 5.87693 15.7084 9.37363C15.7084 12.8703 12.8731 15.7053 9.37508 15.7053C5.87711 15.7053 3.04175 12.8703 3.04175 9.37363ZM9.37508 1.54199C5.04902 1.54199 1.54175 5.04817 1.54175 9.37363C1.54175 13.6991 5.04902 17.2053 9.37508 17.2053C11.2674 17.2053 13.003 16.5344 14.357 15.4176L17.177 18.238C17.4699 18.5309 17.9448 18.5309 18.2377 18.238C18.5306 17.9451 18.5306 17.4703 18.2377 17.1774L15.418 14.3573C16.5365 13.0033 17.2084 11.2669 17.2084 9.37363C17.2084 5.04817 13.7011 1.54199 9.37508 1.54199Z"
-                      fill=""
-                    />
-                  </svg>
-                </button>
-                <input
-                  type="text"
-                  placeholder="Search or type command..."
-                  className="dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-200 bg-transparent py-2.5 pl-12 pr-14 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-800 dark:bg-gray-900 dark:bg-white/[0.03] dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800 xl:w-[430px]"
-                />
-
-                <button className="absolute right-2.5 top-1/2 inline-flex -translate-y-1/2 items-center gap-0.5 rounded-lg border border-gray-200 bg-gray-50 px-[7px] py-[4.5px] text-xs -tracking-[0.2px] text-gray-500 dark:border-gray-800 dark:bg-white/[0.03] dark:text-gray-400">
-                  <span> ⌘ </span>
-                  <span> K </span>
-                </button>
-              </div>
-            </form>
-          </div>
         </div>
         <div
           className={`${
@@ -152,6 +156,27 @@ const Header: React.FC<HeaderProps> = ({ onClick, onToggle }) => {
           } items-center justify-between w-full gap-4 px-5 py-4 lg:flex shadow-theme-md lg:justify-end lg:px-0 lg:shadow-none`}
         >
           <div className="flex items-center gap-2 2xsm:gap-3">
+            {/* <!-- Credit Balance --> */}
+            {isAuthed && creditBalance !== null && (
+              <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="text-brand-500"
+                >
+                  <path
+                    d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM13.41 8.09C13.8 7.7 14.44 7.7 14.83 8.09L15.59 8.85C15.98 9.24 15.98 9.88 15.59 10.27L12.7 13.16C12.31 13.55 11.67 13.55 11.28 13.16L10.52 12.4C10.13 12.01 10.13 11.37 10.52 10.98L13.41 8.09ZM8.5 15.5C8.5 16.33 9.17 17 10 17H14C14.83 17 15.5 16.33 15.5 15.5C15.5 14.67 14.83 14 14 14H10C9.17 14 8.5 14.67 8.5 15.5Z"
+                    fill="currentColor"
+                  />
+                </svg>
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  ${creditBalance.toFixed(2)}
+                </span>
+              </div>
+            )}
             {/* <!-- Cart Icon --> */}
             <Link
               to="/cart"
