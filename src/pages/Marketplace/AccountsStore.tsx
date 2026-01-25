@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router";
 import PageMeta from "../../components/common/PageMeta";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import ComponentCard from "../../components/common/ComponentCard";
@@ -13,27 +12,34 @@ import {
   TableHeader,
   TableRow,
 } from "../../components/ui/table";
+import { Modal } from "../../components/ui/modal";
 import { useCart, type CartAccountItem } from "../../context/CartContext";
 
 type Product = {
-  id?: string;
-  productName: string;
-  priceUsd: number;
+  id: string;
+  service: string;
+  informations: string;
   country: string;
-  numberOfShipments: number;
+  priceUsd: number;
+};
+
+type PaymentModalState = {
+  open: boolean;
+  product: Product | null;
 };
 
 export default function AccountsStore() {
-  const navigate = useNavigate();
   const { addItem } = useCart();
   const [message, setMessage] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
+  const [paymentModal, setPaymentModal] = useState<PaymentModalState>({
+    open: false,
+    product: null,
+  });
 
-  const [nameQuery, setNameQuery] = useState("");
+  const [serviceQuery, setServiceQuery] = useState("");
   const [country, setCountry] = useState("");
-  const [shipmentsMin, setShipmentsMin] = useState("");
-  const [shipmentsMax, setShipmentsMax] = useState("");
   const [priceSort, setPriceSort] = useState<"none" | "asc" | "desc">("none");
 
   useEffect(() => {
@@ -65,56 +71,12 @@ export default function AccountsStore() {
       })
       .then((list) => {
         if (cancelled) return;
-        if (Array.isArray(list) && list.length > 0) {
-          setProducts(list);
-          return;
-        }
-        // Friendly fallback if admin hasn't added products yet.
-        setProducts([
-          {
-            productName: "FedEx Account (Starter)",
-            priceUsd: 49,
-            country: "United States",
-            numberOfShipments: 25,
-          },
-          {
-            productName: "UPS Account (Business)",
-            priceUsd: 99,
-            country: "Canada",
-            numberOfShipments: 60,
-          },
-          {
-            productName: "DHL Account (International)",
-            priceUsd: 149,
-            country: "Germany",
-            numberOfShipments: 120,
-          },
-        ]);
+        setProducts(Array.isArray(list) ? list : []);
       })
       .catch((e: unknown) => {
         if (cancelled) return;
         setLoadError(e instanceof Error ? e.message : "Failed to load products.");
-        // Still show examples.
-        setProducts([
-          {
-            productName: "FedEx Account (Starter)",
-            priceUsd: 49,
-            country: "United States",
-            numberOfShipments: 25,
-          },
-          {
-            productName: "UPS Account (Business)",
-            priceUsd: 99,
-            country: "Canada",
-            numberOfShipments: 60,
-          },
-          {
-            productName: "DHL Account (International)",
-            priceUsd: 149,
-            country: "Germany",
-            numberOfShipments: 120,
-          },
-        ]);
+        setProducts([]);
       });
 
     return () => {
@@ -128,23 +90,15 @@ export default function AccountsStore() {
   }, [products]);
 
   const filteredProducts = useMemo(() => {
-    const q = nameQuery.trim().toLowerCase();
-    const min = shipmentsMin.trim() ? Number(shipmentsMin) : null;
-    const max = shipmentsMax.trim() ? Number(shipmentsMax) : null;
+    const q = serviceQuery.trim().toLowerCase();
 
     let list = products.slice();
 
     if (q) {
-      list = list.filter((p) => p.productName.toLowerCase().includes(q));
+      list = list.filter((p) => p.service.toLowerCase().includes(q));
     }
     if (country) {
       list = list.filter((p) => p.country === country);
-    }
-    if (min !== null && Number.isFinite(min)) {
-      list = list.filter((p) => p.numberOfShipments >= min);
-    }
-    if (max !== null && Number.isFinite(max)) {
-      list = list.filter((p) => p.numberOfShipments <= max);
     }
 
     if (priceSort === "asc") {
@@ -154,9 +108,9 @@ export default function AccountsStore() {
     }
 
     return list;
-  }, [products, nameQuery, country, shipmentsMin, shipmentsMax, priceSort]);
+  }, [products, serviceQuery, country, priceSort]);
 
-  const handleBuy = (p: Product) => {
+  const handleAddToCart = (p: Product) => {
     const id =
       typeof crypto !== "undefined" && "randomUUID" in crypto
         ? crypto.randomUUID()
@@ -166,15 +120,64 @@ export default function AccountsStore() {
       id,
       createdAt: new Date().toISOString(),
       kind: "account",
-      productName: p.productName,
+      productName: p.service,
       priceUsd: p.priceUsd,
       country: p.country,
-      numberOfShipments: p.numberOfShipments,
+      numberOfShipments: 0, // Not used in new structure
     };
 
     addItem(item);
-    setMessage(`Added "${p.productName}" to cart.`);
-    navigate("/cart");
+    setMessage(`Added "${p.service}" to cart.`);
+    setTimeout(() => setMessage(null), 3000);
+  };
+
+  const handleBuyNow = (p: Product) => {
+    setPaymentModal({ open: true, product: p });
+  };
+
+  const closePaymentModal = () => {
+    setPaymentModal({ open: false, product: null });
+  };
+
+  const handlePaymentWithCredits = async () => {
+    if (!paymentModal.product) return;
+    // TODO: Implement credits payment
+    setMessage("Credits payment not yet implemented.");
+    closePaymentModal();
+  };
+
+  const handlePaymentWithCoinbase = async () => {
+    if (!paymentModal.product) return;
+    try {
+      const response = await fetch("/api/coinbase/create-charge", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("auth.token") || ""}`,
+        },
+        body: JSON.stringify({
+          items: [
+            {
+              kind: "account",
+              productName: paymentModal.product.service,
+              priceUsd: paymentModal.product.priceUsd,
+              country: paymentModal.product.country,
+              numberOfShipments: 0,
+            },
+          ],
+        }),
+      });
+
+      const data = await response.json();
+      if (data.ok && data.checkoutUrl) {
+        window.location.href = data.checkoutUrl;
+      } else {
+        setMessage(data.error || "Failed to create payment.");
+      }
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Failed to create payment.");
+    }
+    closePaymentModal();
   };
 
   return (
@@ -183,11 +186,11 @@ export default function AccountsStore() {
         title="Accounts Store | Labelz"
         description="Browse shipping accounts for purchase."
       />
-      <PageBreadcrumb pageTitle="Accounts Store" />
+      <PageBreadcrumb pageTitle="Account Store" />
 
       <ComponentCard
         title="Accounts for Sale"
-        desc='Products for sale. Columns: "Product Name";"Price";"Country";"Number of Shipments";"Buy Action"'
+        desc='Browse and purchase accounts. Columns: "Service", "Informations", "Country", "Price"'
       >
         {loadError ? (
           <div className="mb-4 rounded-lg border border-error-500/30 bg-error-500/10 px-4 py-3 text-sm text-error-700 dark:text-error-400">
@@ -195,20 +198,20 @@ export default function AccountsStore() {
           </div>
         ) : null}
         {message ? (
-          <div className="rounded-lg border border-success-500/30 bg-success-500/10 px-4 py-3 text-sm text-success-700 dark:text-success-400">
+          <div className="mb-4 rounded-lg border border-success-500/30 bg-success-500/10 px-4 py-3 text-sm text-success-700 dark:text-success-400">
             {message}
           </div>
         ) : null}
 
         <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-white/[0.05] dark:bg-white/[0.03]">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <div className="xl:col-span-2">
-              <Label htmlFor="productNameFilter">Product Name</Label>
+              <Label htmlFor="serviceFilter">Service</Label>
               <Input
-                id="productNameFilter"
-                placeholder="Search by name..."
-                value={nameQuery}
-                onChange={(e) => setNameQuery(e.target.value)}
+                id="serviceFilter"
+                placeholder="Search by service..."
+                value={serviceQuery}
+                onChange={(e) => setServiceQuery(e.target.value)}
               />
             </div>
 
@@ -230,34 +233,6 @@ export default function AccountsStore() {
             </div>
 
             <div>
-              <Label htmlFor="shipmentsMin">Number of Shipments (min)</Label>
-              <Input
-                id="shipmentsMin"
-                type="number"
-                min="0"
-                step={1}
-                placeholder="0"
-                value={shipmentsMin}
-                onChange={(e) => setShipmentsMin(e.target.value)}
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="shipmentsMax">Number of Shipments (max)</Label>
-              <Input
-                id="shipmentsMax"
-                type="number"
-                min="0"
-                step={1}
-                placeholder="999"
-                value={shipmentsMax}
-                onChange={(e) => setShipmentsMax(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div className="w-full sm:max-w-xs">
               <Label htmlFor="priceSort">Price</Label>
               <select
                 id="priceSort"
@@ -272,7 +247,9 @@ export default function AccountsStore() {
                 <option value="desc">Higher to Lower</option>
               </select>
             </div>
+          </div>
 
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
               <div className="text-sm text-gray-600 dark:text-gray-400 sm:self-center">
                 Showing <span className="font-medium">{filteredProducts.length}</span>{" "}
@@ -281,10 +258,8 @@ export default function AccountsStore() {
               <Button
                 variant="outline"
                 onClick={() => {
-                  setNameQuery("");
+                  setServiceQuery("");
                   setCountry("");
-                  setShipmentsMin("");
-                  setShipmentsMax("");
                   setPriceSort("none");
                 }}
               >
@@ -294,7 +269,7 @@ export default function AccountsStore() {
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
+        <div className="mt-6 overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
           <div className="max-w-full overflow-x-auto">
             <Table>
               <TableHeader className="border-b border-gray-100 dark:border-white/[0.05]">
@@ -303,13 +278,13 @@ export default function AccountsStore() {
                     isHeader
                     className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400"
                   >
-                    Product Name
+                    Service
                   </TableCell>
                   <TableCell
                     isHeader
                     className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400"
                   >
-                    Price
+                    Informations
                   </TableCell>
                   <TableCell
                     isHeader
@@ -321,13 +296,13 @@ export default function AccountsStore() {
                     isHeader
                     className="px-5 py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400"
                   >
-                    Number of Shipments
+                    Price
                   </TableCell>
                   <TableCell
                     isHeader
                     className="px-5 py-3 text-end text-theme-xs font-medium text-gray-500 dark:text-gray-400"
                   >
-                    Buy Action
+                    Actions
                   </TableCell>
                 </TableRow>
               </TableHeader>
@@ -337,37 +312,45 @@ export default function AccountsStore() {
                   <TableRow>
                     <TableCell
                       className="px-5 py-6 text-center text-theme-sm text-gray-600 dark:text-gray-400"
+                      colSpan={5}
                     >
-                      No products match your filters.
+                      {products.length === 0
+                        ? "No products available. Admin can add products from the Admin panel."
+                        : "No products match your filters."}
                     </TableCell>
-                    <TableCell className="px-5 py-6">{" "}</TableCell>
-                    <TableCell className="px-5 py-6">{" "}</TableCell>
-                    <TableCell className="px-5 py-6">{" "}</TableCell>
-                    <TableCell className="px-5 py-6">{" "}</TableCell>
                   </TableRow>
                 ) : (
                   filteredProducts.map((p) => (
-                    <TableRow key={p.productName}>
+                    <TableRow key={p.id}>
                       <TableCell className="px-5 py-4 text-start text-theme-sm font-medium text-gray-800 dark:text-white/90">
-                        {p.productName}
+                        {p.service}
                       </TableCell>
                       <TableCell className="px-5 py-4 text-start text-theme-sm text-gray-600 dark:text-gray-400">
-                        ${p.priceUsd.toFixed(2)}
+                        {p.informations || "—"}
                       </TableCell>
                       <TableCell className="px-5 py-4 text-start text-theme-sm text-gray-600 dark:text-gray-400">
                         {p.country}
                       </TableCell>
                       <TableCell className="px-5 py-4 text-start text-theme-sm text-gray-600 dark:text-gray-400">
-                        {p.numberOfShipments}
+                        ${p.priceUsd.toFixed(2)}
                       </TableCell>
                       <TableCell className="px-5 py-4 text-end">
-                        <Button
-                          size="sm"
-                          variant="primary"
-                          onClick={() => handleBuy(p)}
-                        >
-                          Buy
-                        </Button>
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleAddToCart(p)}
+                          >
+                            Add to cart
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            onClick={() => handleBuyNow(p)}
+                          >
+                            Buy now
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -377,7 +360,45 @@ export default function AccountsStore() {
           </div>
         </div>
       </ComponentCard>
+
+      <Modal
+        isOpen={paymentModal.open}
+        onClose={closePaymentModal}
+        className="max-w-[500px] m-4 p-6"
+      >
+        <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">
+          Choose Payment Method
+        </h3>
+        <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+          {paymentModal.product && (
+            <>
+              Pay ${paymentModal.product.priceUsd.toFixed(2)} for{" "}
+              {paymentModal.product.service}
+            </>
+          )}
+        </p>
+        <div className="mt-6 flex flex-col gap-3">
+          <Button
+            variant="primary"
+            onClick={handlePaymentWithCredits}
+            className="w-full"
+          >
+            Pay with Credits
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handlePaymentWithCoinbase}
+            className="w-full"
+          >
+            Pay with Coinbase
+          </Button>
+        </div>
+        <div className="mt-6 flex justify-end">
+          <Button variant="outline" onClick={closePaymentModal}>
+            Cancel
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 }
-
