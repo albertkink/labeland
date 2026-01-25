@@ -9,6 +9,7 @@ import {
   HorizontaLDots,
   PageIcon,
   ChatIcon,
+  BoxIcon,
 } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
 
@@ -28,10 +29,12 @@ const allNavItems: NavItem[] = [
   {
     name: "Create Label",
     icon: <PageIcon />,
-    subItems: [
-      { name: "Create Label", path: "/create-label" },
-      { name: "Store with accounts", path: "/store" },
-    ],
+    path: "/create-label",
+  },
+  {
+    name: "Account Store",
+    icon: <BoxIcon />,
+    path: "/store",
   },
   {
     name: "SMS Verification",
