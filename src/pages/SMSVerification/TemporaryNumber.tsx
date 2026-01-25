@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import PageMeta from "../../components/common/PageMeta";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import ComponentCard from "../../components/common/ComponentCard";
@@ -29,6 +29,7 @@ type TemporaryNumber = {
 };
 
 export default function TemporaryNumber() {
+  const token = useMemo(() => localStorage.getItem("auth.token") || "", []);
   const [services, setServices] = useState<Service[]>([]);
   const [countries, setCountries] = useState<{ code: string; name: string }[]>([]);
   const [selectedCountry, setSelectedCountry] = useState("");
@@ -40,30 +41,58 @@ export default function TemporaryNumber() {
 
   // Load available services and countries
   useEffect(() => {
+    if (!token) {
+      setError("Please log in to access SMS verification services");
+      return;
+    }
+
     let cancelled = false;
     setLoading(true);
     setError(null);
 
     Promise.all([
-      fetch("/api/sms-verification/services")
+      fetch("/api/sms-verification/services", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
         .then(async (r) => {
-          if (!r.ok) throw new Error("Failed to load services");
+          if (!r.ok) {
+            const errorData = await r.json().catch(() => ({}));
+            throw new Error(errorData.error || "Failed to load services");
+          }
           const data = await r.json();
           return data.services || [];
         })
-        .catch(() => []),
-      fetch("/api/sms-verification/countries")
+        .catch((e) => {
+          if (cancelled) return [];
+          throw e;
+        }),
+      fetch("/api/sms-verification/countries", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
         .then(async (r) => {
-          if (!r.ok) throw new Error("Failed to load countries");
+          if (!r.ok) {
+            const errorData = await r.json().catch(() => ({}));
+            throw new Error(errorData.error || "Failed to load countries");
+          }
           const data = await r.json();
           return data.countries || [];
         })
-        .catch(() => []),
+        .catch((e) => {
+          if (cancelled) return [];
+          throw e;
+        }),
     ])
       .then(([servicesList, countriesList]) => {
         if (cancelled) return;
         setServices(servicesList);
         setCountries(countriesList);
+        if (servicesList.length === 0 && countriesList.length === 0) {
+          setError("No services or countries available. Please try again later.");
+        }
       })
       .catch((e) => {
         if (cancelled) return;
@@ -77,12 +106,18 @@ export default function TemporaryNumber() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [token]);
 
   // Load user's temporary numbers
   useEffect(() => {
+    if (!token) return;
+
     let cancelled = false;
-    fetch("/api/sms-verification/temporary-numbers")
+    fetch("/api/sms-verification/temporary-numbers", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
       .then(async (r) => {
         if (!r.ok) return [];
         const data = await r.json();
@@ -99,7 +134,7 @@ export default function TemporaryNumber() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [token]);
 
   const handleGetNumber = async () => {
     if (!selectedCountry || !selectedService) {
@@ -114,7 +149,10 @@ export default function TemporaryNumber() {
     try {
       const response = await fetch("/api/sms-verification/get-number", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
           country: selectedCountry,
           service: selectedService,
@@ -128,7 +166,11 @@ export default function TemporaryNumber() {
 
       setMessage("Number obtained successfully!");
       // Refresh numbers list
-      const numbersResponse = await fetch("/api/sms-verification/temporary-numbers");
+      const numbersResponse = await fetch("/api/sms-verification/temporary-numbers", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
       if (numbersResponse.ok) {
         const numbersData = await numbersResponse.json();
         setNumbers(numbersData.numbers || []);
@@ -147,6 +189,9 @@ export default function TemporaryNumber() {
     try {
       const response = await fetch(`/api/sms-verification/get-code/${numberId}`, {
         method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       });
 
       const data = await response.json();
