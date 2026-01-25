@@ -1202,6 +1202,354 @@ app.post(
   },
 );
 
+// --- SMS Verification (SMSPool.net) ---
+const SMSPOOL_API_KEY = "SkYJoK2X5STWKhgBiZPP0k1XziMYlWEZ";
+const SMSPOOL_API_BASE = "https://api.smspool.net";
+
+// Helper function to make SMSPool API requests
+const smspoolRequest = async (endpoint, options = {}) => {
+  const url = new URL(`${SMSPOOL_API_BASE}${endpoint}`);
+  
+  // Add API key as query parameter (SMSPool uses this method)
+  url.searchParams.set("api_key", SMSPOOL_API_KEY);
+  
+  // If there are additional query params in options, add them
+  if (options.query) {
+    for (const [key, value] of Object.entries(options.query)) {
+      url.searchParams.set(key, value);
+    }
+  }
+  
+  const fetchOptions = {
+    method: options.method || "GET",
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+  };
+  
+  // Add body for POST requests
+  if (options.body && (options.method === "POST" || options.method === "PUT")) {
+    fetchOptions.body = typeof options.body === "string" 
+      ? options.body 
+      : JSON.stringify(options.body);
+  }
+  
+  const response = await fetch(url.toString(), fetchOptions);
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    let errorData;
+    try {
+      errorData = JSON.parse(errorText);
+    } catch {
+      errorData = { error: errorText || `HTTP ${response.status}` };
+    }
+    throw new Error(errorData.error || errorData.message || errorData.msg || `API request failed: ${response.status}`);
+  }
+  
+  return await response.json();
+};
+
+// Get available services
+app.get("/api/sms-verification/services", requireAuth, async (_req, res) => {
+  try {
+    // Get pricing information which includes services
+    const data = await smspoolRequest("/pricing");
+    const services = [];
+    
+    // SMSPool API returns pricing data with services per country
+    // We'll extract unique services from the pricing data
+    if (data && typeof data === "object") {
+      const serviceMap = new Map();
+      for (const [country, countryData] of Object.entries(data)) {
+        if (countryData && typeof countryData === "object") {
+          for (const [service, price] of Object.entries(countryData)) {
+            if (typeof price === "number" && !serviceMap.has(service)) {
+              serviceMap.set(service, {
+                service,
+                name: service.charAt(0).toUpperCase() + service.slice(1).replace(/_/g, " "),
+                price: price,
+              });
+            }
+          }
+        }
+      }
+      services.push(...Array.from(serviceMap.values()));
+    }
+    
+    return res.json({ ok: true, services });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Unknown error",
+      services: [],
+    });
+  }
+});
+
+// Get available countries
+app.get("/api/sms-verification/countries", requireAuth, async (_req, res) => {
+  try {
+    const data = await smspoolRequest("/pricing");
+    const countries = [];
+    
+    if (data && typeof data === "object") {
+      for (const [code, countryData] of Object.entries(data)) {
+        if (countryData && typeof countryData === "object") {
+          countries.push({
+            code: code.toUpperCase(),
+            name: code.charAt(0).toUpperCase() + code.slice(1).replace(/_/g, " "),
+          });
+        }
+      }
+    }
+    
+    return res.json({ ok: true, countries });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Unknown error",
+      countries: [],
+    });
+  }
+});
+
+// Get rental countries
+app.get("/api/sms-verification/rental-countries", requireAuth, async (_req, res) => {
+  try {
+    // Get rental pricing information
+    const data = await smspoolRequest("/rental/pricing");
+    const countries = [];
+    
+    if (data && typeof data === "object") {
+      for (const [code, price] of Object.entries(data)) {
+        if (typeof price === "number") {
+          countries.push({
+            code: code.toUpperCase(),
+            name: code.charAt(0).toUpperCase() + code.slice(1).replace(/_/g, " "),
+            price: price,
+            available: true,
+          });
+        }
+      }
+    }
+    
+    return res.json({ ok: true, countries });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Unknown error",
+      countries: [],
+    });
+  }
+});
+
+// Get temporary number
+app.post("/api/sms-verification/get-number", requireAuth, express.json(), async (req, res) => {
+  try {
+    const body = req.body ?? {};
+    const country = String(body.country || "").toLowerCase();
+    const service = String(body.service || "");
+    
+    if (!country || !service) {
+      return res.status(400).json({ ok: false, error: "Country and service are required." });
+    }
+    
+    // Order a number using SMSPool API
+    // SMSPool API typically uses query parameters for ordering
+    const data = await smspoolRequest("/sms/order", {
+      method: "POST",
+      query: {
+        country,
+        service,
+      },
+    });
+    
+    if (!data || (!data.id && !data.order_id)) {
+      return res.status(500).json({ ok: false, error: data?.error || data?.message || "Failed to get number from SMSPool." });
+    }
+    
+    return res.json({
+      ok: true,
+      number: {
+        id: String(data.id || data.order_id || ""),
+        number: data.number || data.phone || "",
+        service,
+        country: country.toUpperCase(),
+        status: "pending",
+        createdAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Unknown error",
+    });
+  }
+});
+
+// Get SMS code for a number
+app.post("/api/sms-verification/get-code/:id", requireAuth, async (req, res) => {
+  try {
+    const id = String(req.params.id || "");
+    if (!id) {
+      return res.status(400).json({ ok: false, error: "Number ID is required." });
+    }
+    
+    // Get SMS code using SMSPool API
+    const data = await smspoolRequest("/sms/status", {
+      query: {
+        order_id: id,
+      },
+    });
+    
+    // Check various possible status values
+    const status = data?.status || data?.state || "";
+    const isCompleted = status === "SMS_RECEIVED" || status === "completed" || status === "RECEIVED";
+    
+    if (!isCompleted || !data.code) {
+      return res.json({
+        ok: true,
+        code: null,
+        status: status || "pending",
+        message: "SMS not received yet. Please wait and try again.",
+      });
+    }
+    
+    return res.json({
+      ok: true,
+      code: data.code || data.sms || data.message || "",
+      status: "completed",
+    });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Unknown error",
+    });
+  }
+});
+
+// Get user's temporary numbers
+app.get("/api/sms-verification/temporary-numbers", requireAuth, async (req, res) => {
+  try {
+    // Get active orders from SMSPool
+    const data = await smspoolRequest("/sms/orders");
+    
+    const numbers = [];
+    if (Array.isArray(data)) {
+      for (const order of data) {
+        if (order && typeof order === "object") {
+          numbers.push({
+            id: String(order.id || order.order_id || ""),
+            number: String(order.number || order.phone || ""),
+            service: String(order.service || ""),
+            country: String(order.country || "").toUpperCase(),
+            status: order.status === "SMS_RECEIVED" ? "completed" : "pending",
+            code: order.code || order.sms || undefined,
+            createdAt: order.created_at || new Date().toISOString(),
+          });
+        }
+      }
+    }
+    
+    return res.json({ ok: true, numbers });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Unknown error",
+      numbers: [],
+    });
+  }
+});
+
+// Rent a number
+app.post("/api/sms-verification/rent-number", requireAuth, express.json(), async (req, res) => {
+  try {
+    const body = req.body ?? {};
+    const country = String(body.country || "").toLowerCase();
+    
+    if (!country) {
+      return res.status(400).json({ ok: false, error: "Country is required." });
+    }
+    
+    // Rent a number using SMSPool API
+    const data = await smspoolRequest("/rental/order", {
+      method: "POST",
+      query: {
+        country,
+      },
+    });
+    
+    if (!data || (!data.id && !data.rental_id)) {
+      return res.status(500).json({ ok: false, error: data?.error || data?.message || "Failed to rent number from SMSPool." });
+    }
+    
+    // Calculate expiration (typically 24 hours for rental, or use API response)
+    const expiresAt = data.expires_at 
+      ? new Date(data.expires_at)
+      : (() => {
+          const exp = new Date();
+          exp.setHours(exp.getHours() + 24);
+          return exp;
+        })();
+    
+    return res.json({
+      ok: true,
+      rental: {
+        id: String(data.id || data.rental_id || ""),
+        number: data.number || data.phone || "",
+        country: country.toUpperCase(),
+        service: "all",
+        expiresAt: expiresAt.toISOString(),
+        status: "active",
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Unknown error",
+    });
+  }
+});
+
+// Get user's rentals
+app.get("/api/sms-verification/rentals", requireAuth, async (req, res) => {
+  try {
+    // Get active rentals from SMSPool
+    const data = await smspoolRequest("/rental/orders");
+    
+    const rentals = [];
+    if (Array.isArray(data)) {
+      for (const rental of data) {
+        if (rental && typeof rental === "object") {
+          const expiresAt = rental.expires_at || rental.expiresAt;
+          const expires = expiresAt
+            ? new Date(expiresAt)
+            : new Date(Date.now() + 24 * 60 * 60 * 1000);
+          
+          rentals.push({
+            id: String(rental.id || rental.rental_id || ""),
+            number: String(rental.number || rental.phone || ""),
+            country: String(rental.country || "").toUpperCase(),
+            service: String(rental.service || "all"),
+            expiresAt: expires.toISOString(),
+            status: expires > new Date() ? "active" : "expired",
+          });
+        }
+      }
+    }
+    
+    return res.json({ ok: true, rentals });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Unknown error",
+      rentals: [],
+    });
+  }
+});
+
 // Initialize database and start server
 (async () => {
   try {
