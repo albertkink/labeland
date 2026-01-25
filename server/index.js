@@ -1,8 +1,10 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import fssync from "node:fs";
 import path from "node:path";
 import express from "express";
-import bcrypt from "bcryptjs";
+import multer from "multer";
+import archiver from "archiver";
 import jwt from "jsonwebtoken";
 import {
   initDatabase,
@@ -17,6 +19,11 @@ import {
   createBlogPost,
   updateBlogPost,
   deleteBlogPost,
+  createLabel,
+  getLabelById,
+  getLabelsByUserId,
+  getAllLabels,
+  updateLabel,
 } from "./db.js";
 
 const PORT = 8080;
@@ -65,7 +72,35 @@ const ORDERS_FILE =
   process.env.COINBASE_ORDERS_FILE ||
   path.resolve(process.cwd(), "data", "coinbase-commerce-orders.txt");
 
+const LABELS_UPLOAD_DIR =
+  process.env.LABELS_UPLOAD_DIR ||
+  path.resolve(process.cwd(), "data", "labels");
+
 const app = express();
+
+// Multer for label file uploads (admin "done")
+const labelUploadStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const id = String(req.params?.id || "").replace(/[^a-zA-Z0-9-]/g, "");
+    if (!id) return cb(new Error("Missing label id"), null);
+    const dir = path.join(LABELS_UPLOAD_DIR, id);
+    fssync.mkdir(dir, { recursive: true }, (err) => {
+      if (err) return cb(err, null);
+      cb(null, dir);
+    });
+  },
+  filename: (req, file, cb) => {
+    const raw = String(file.originalname || "file").replace(/[^a-zA-Z0-9._-]/g, "_");
+    const base = raw || "file";
+    const ext = path.extname(base) || "";
+    const name = path.basename(base, ext) || "file";
+    cb(null, `${Date.now()}_${name}${ext}`);
+  },
+});
+const uploadLabelFiles = multer({
+  storage: labelUploadStorage,
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB per file
+});
 
 // CORS middleware
 app.use((req, res, next) => {
@@ -981,6 +1016,191 @@ app.delete("/api/admin/orders/:orderId", requireAuth, requireAdmin, async (req, 
   await writeOrders(next);
   return res.json({ ok: true });
 });
+
+// --- Labels (user) ---
+app.post("/api/labels", requireAuth, express.json(), async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const body = req.body ?? {};
+    const labelData = body.labelData ?? body;
+    const id = crypto.randomUUID();
+    const label = await createLabel({ id, userId, labelData });
+    return res.json({ ok: true, label });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Unknown error",
+    });
+  }
+});
+
+app.get("/api/labels", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const labels = await getLabelsByUserId(userId);
+    return res.json({ ok: true, labels });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Unknown error",
+    });
+  }
+});
+
+app.get("/api/labels/:id", requireAuth, async (req, res) => {
+  try {
+    const id = String(req.params.id || "");
+    const label = await getLabelById(id);
+    if (!label) return res.status(404).json({ ok: false, error: "Not found." });
+    if (label.userId !== req.user.id && !req.user.isAdmin) {
+      return res.status(403).json({ ok: false, error: "Forbidden." });
+    }
+    return res.json({ ok: true, label });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Unknown error",
+    });
+  }
+});
+
+app.get("/api/labels/:id/download", requireAuth, async (req, res) => {
+  try {
+    const id = String(req.params.id || "");
+    const label = await getLabelById(id);
+    if (!label) return res.status(404).json({ ok: false, error: "Not found." });
+    if (label.userId !== req.user.id) {
+      return res.status(403).json({ ok: false, error: "Forbidden." });
+    }
+    if (label.status !== "done") {
+      return res.status(400).json({ ok: false, error: "Label is not ready for download." });
+    }
+    const files = Array.isArray(label.files) ? label.files : [];
+    if (files.length === 0) {
+      return res.status(404).json({ ok: false, error: "No documents available." });
+    }
+    const dir = path.join(LABELS_UPLOAD_DIR, id);
+    const existing = [];
+    for (const f of files) {
+      const stored = (typeof f === "object" && f && f.filename) ? f.filename : (typeof f === "string" ? f : null);
+      if (!stored) continue;
+      const fp = path.join(dir, stored);
+      try {
+        await fs.access(fp);
+        const name = (typeof f === "object" && f && f.originalName) ? f.originalName : stored;
+        existing.push({ path: fp, name });
+      } catch {
+        /* skip missing */
+      }
+    }
+    if (existing.length === 0) {
+      return res.status(404).json({ ok: false, error: "No documents found on disk." });
+    }
+    if (existing.length === 1) {
+      const [one] = existing;
+      const name = one.name || "document";
+      return res.download(one.path, name);
+    }
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="label-${id}-documents.zip"`);
+    const archive = archiver("zip", { zlib: { level: 9 } });
+    archive.on("error", (err) => {
+      if (!res.headersSent) res.status(500).json({ ok: false, error: err.message });
+    });
+    archive.pipe(res);
+    for (const f of existing) {
+      archive.file(f.path, { name: f.name || path.basename(f.path) });
+    }
+    await archive.finalize();
+  } catch (err) {
+    if (!res.headersSent) {
+      return res.status(500).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
+  }
+});
+
+// --- Admin: labels ---
+app.get("/api/admin/labels", requireAuth, requireAdmin, async (_req, res) => {
+  try {
+    const labels = await getAllLabels();
+    return res.json({ ok: true, labels });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Unknown error",
+    });
+  }
+});
+
+app.post(
+  "/api/admin/labels/:id/done",
+  requireAuth,
+  requireAdmin,
+  (req, res, next) => {
+    uploadLabelFiles.array("files", 20)(req, res, (err) => {
+      if (err) return res.status(400).json({ ok: false, error: err?.message || "Upload failed." });
+      next();
+    });
+  },
+  async (req, res) => {
+    try {
+      const id = String(req.params.id || "");
+      const label = await getLabelById(id);
+      if (!label) return res.status(404).json({ ok: false, error: "Not found." });
+      if (label.status !== "pending") {
+        return res.status(400).json({ ok: false, error: "Label is not pending." });
+      }
+      const uploaded = (req.files || []).map((f) => ({
+        filename: f.filename,
+        originalName: f.originalname || f.filename,
+      }));
+      if (uploaded.length === 0) {
+        return res.status(400).json({ ok: false, error: "Upload at least one file." });
+      }
+      await updateLabel(id, { status: "done", files: uploaded });
+      const updated = await getLabelById(id);
+      return res.json({ ok: true, label: updated });
+    } catch (err) {
+      return res.status(500).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
+  },
+);
+
+app.post(
+  "/api/admin/labels/:id/decline",
+  requireAuth,
+  requireAdmin,
+  express.json(),
+  async (req, res) => {
+    try {
+      const id = String(req.params.id || "");
+      const body = req.body ?? {};
+      const reason = String(body.reason ?? "").trim();
+      if (!reason) {
+        return res.status(400).json({ ok: false, error: "Reason is required." });
+      }
+      const label = await getLabelById(id);
+      if (!label) return res.status(404).json({ ok: false, error: "Not found." });
+      if (label.status !== "pending") {
+        return res.status(400).json({ ok: false, error: "Label is not pending." });
+      }
+      await updateLabel(id, { status: "cancelled", declineReason: reason });
+      const updated = await getLabelById(id);
+      return res.json({ ok: true, label: updated });
+    } catch (err) {
+      return res.status(500).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
+  },
+);
 
 // Initialize database and start server
 (async () => {
