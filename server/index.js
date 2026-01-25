@@ -400,6 +400,19 @@ app.post("/api/wallet/pay", requireAuth, express.json(), async (req, res) => {
       return res.status(400).json({ ok: false, error: "Cart is empty." });
     }
 
+    // Get email from request body or use user's email
+    const providedEmail = typeof body.email === "string" ? body.email.trim() : "";
+    const email = providedEmail || req.user.email || "";
+
+    // Validate email if there are account items
+    const hasAccountItems = items.some((item) => item.kind === "account");
+    if (hasAccountItems && !email) {
+      return res.status(400).json({
+        ok: false,
+        error: "Email is required for account purchases.",
+      });
+    }
+
     const total = calcCartTotalUsd(items);
     const balance = await getBalance(userId);
     if (balance < total) {
@@ -428,7 +441,7 @@ app.post("/api/wallet/pay", requireAuth, express.json(), async (req, res) => {
       totalUsd: total,
       currency: "USD",
       items,
-      user: { id: userId, email: req.user.email || "" },
+      user: { id: userId, email: email },
     });
 
     return res.json({ ok: true, orderId, total, balance: newBal });
@@ -722,9 +735,22 @@ app.post("/api/coinbase/create-charge", express.json(), async (req, res) => {
       return res.status(400).json({ ok: false, error: "Cart is empty." });
     }
 
+    // Get email from request body or use authenticated user's email
+    const providedEmail = typeof body.email === "string" ? body.email.trim() : "";
+    const who = optionalAuth(req);
+    const email = providedEmail || (who ? who.email || "" : "");
+
+    // Validate email if there are account items
+    const hasAccountItems = items.some((item) => item.kind === "account");
+    if (hasAccountItems && !email) {
+      return res.status(400).json({
+        ok: false,
+        error: "Email is required for account purchases.",
+      });
+    }
+
     const orderId = crypto.randomUUID();
     const amount = calcCartTotalUsd(items);
-    const who = optionalAuth(req);
 
     const chargeRequest = {
       name: "Labelz Cart",
@@ -749,7 +775,7 @@ app.post("/api/coinbase/create-charge", express.json(), async (req, res) => {
       totalUsd: amount,
       currency: "USD",
       items,
-      user: who ? { id: who.id, email: who.email || "" } : null,
+      user: who ? { id: who.id, email: email } : email ? { id: null, email: email } : null,
     });
 
     const r = await fetch("https://api.commerce.coinbase.com/charges", {
