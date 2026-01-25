@@ -4,7 +4,6 @@ import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import ComponentCard from "../../components/common/ComponentCard";
 import Button from "../../components/ui/button/Button";
 import Label from "../../components/form/Label";
-import Input from "../../components/form/input/InputField";
 import {
   Table,
   TableBody,
