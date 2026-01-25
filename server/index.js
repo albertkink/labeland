@@ -1334,7 +1334,7 @@ const smspoolRequest = async (endpoint, options = {}) => {
 app.get("/api/sms-verification/services", requireAuth, async (_req, res) => {
   try {
     // Get pricing information which includes services
-    const data = await smspoolRequest("/pricing");
+    const data = await smspoolRequest("/request/pricing");
     const services = [];
     
     // SMSPool API returns pricing data with services per country
@@ -1371,7 +1371,7 @@ app.get("/api/sms-verification/services", requireAuth, async (_req, res) => {
 // Get available countries
 app.get("/api/sms-verification/countries", requireAuth, async (_req, res) => {
   try {
-    const data = await smspoolRequest("/pricing");
+    const data = await smspoolRequest("/request/pricing");
     const countries = [];
     
     if (data && typeof data === "object") {
@@ -1440,7 +1440,7 @@ app.post("/api/sms-verification/get-number", requireAuth, express.json(), async 
     
     // Order a number using SMSPool API
     // SMSPool API typically uses query parameters for ordering
-    const data = await smspoolRequest("/sms/order", {
+    const data = await smspoolRequest("/request/sms/order", {
       method: "POST",
       query: {
         country,
@@ -1480,7 +1480,7 @@ app.post("/api/sms-verification/get-code/:id", requireAuth, async (req, res) => 
     }
     
     // Get SMS code using SMSPool API
-    const data = await smspoolRequest("/sms/status", {
+    const data = await smspoolRequest("/request/sms/status", {
       query: {
         order_id: id,
       },
@@ -1557,7 +1557,7 @@ app.post("/api/sms-verification/rent-number", requireAuth, express.json(), async
     }
     
     // Rent a number using SMSPool API
-    const data = await smspoolRequest("/rental/order", {
+    const data = await smspoolRequest("/request/rental/order", {
       method: "POST",
       query: {
         country,
@@ -1600,7 +1600,7 @@ app.post("/api/sms-verification/rent-number", requireAuth, express.json(), async
 app.get("/api/sms-verification/rentals", requireAuth, async (req, res) => {
   try {
     // Get active rentals from SMSPool
-    const data = await smspoolRequest("/rental/orders");
+    const data = await smspoolRequest("/request/rental/orders");
     
     const rentals = [];
     if (Array.isArray(data)) {
