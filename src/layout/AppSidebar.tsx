@@ -105,19 +105,14 @@ const AppSidebar: React.FC = () => {
             setOpenSubmenu({ type: "main", index });
             submenuMatched = true;
           }
-        }));
-      } else if (nav.subItems && nav.name === "SMS Verification") {
-        // Close SMS Verification submenu if it's open
-        if (openSubmenu?.type === "main" && openSubmenu?.index === index) {
-          setOpenSubmenu(null);
-        }
+        });
       }
     });
 
     if (!submenuMatched) {
       setOpenSubmenu(null);
     }
-  }, [location, isActive, navItems, openSubmenu]);
+  }, [location, isActive, navItems]);
 
   useEffect(() => {
     if (openSubmenu !== null) {
