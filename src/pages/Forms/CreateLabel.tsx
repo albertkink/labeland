@@ -823,15 +823,15 @@ export default function CreateLabel() {
             title="Create"
             desc="Review and create your label request."
           >
-            {purchaseResult ? (
+            {createResult ? (
               <div
                 className={`rounded-lg border px-4 py-3 text-sm ${
-                  purchaseResult.ok
+                  createResult.ok
                     ? "border-success-500/30 bg-success-500/10 text-success-700 dark:text-success-400"
                     : "border-error-500/30 bg-error-500/10 text-error-700 dark:text-error-400"
                 }`}
               >
-                {purchaseResult.message}
+                {createResult.message}
               </div>
             ) : (
               <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600 dark:border-gray-800 dark:bg-white/[0.03] dark:text-gray-400">
