@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import PageMeta from "../../components/common/PageMeta";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import ComponentCard from "../../components/common/ComponentCard";
@@ -29,6 +29,7 @@ type Rental = {
 };
 
 export default function NumberRental() {
+  const token = useMemo(() => localStorage.getItem("auth.token") || "", []);
   const [countries, setCountries] = useState<Country[]>([]);
   const [selectedCountry, setSelectedCountry] = useState("");
   const [rentals, setRentals] = useState<Rental[]>([]);
@@ -38,19 +39,34 @@ export default function NumberRental() {
 
   // Load available countries for rental
   useEffect(() => {
+    if (!token) {
+      setError("Please log in to access SMS verification services");
+      return;
+    }
+
     let cancelled = false;
     setLoading(true);
     setError(null);
 
-    fetch("/api/sms-verification/rental-countries")
+    fetch("/api/sms-verification/rental-countries", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
       .then(async (r) => {
-        if (!r.ok) throw new Error("Failed to load countries");
+        if (!r.ok) {
+          const errorData = await r.json().catch(() => ({}));
+          throw new Error(errorData.error || "Failed to load countries");
+        }
         const data = await r.json();
         return data.countries || [];
       })
       .then((list) => {
         if (cancelled) return;
         setCountries(list);
+        if (list.length === 0) {
+          setError("No countries available for rental. Please try again later.");
+        }
       })
       .catch((e) => {
         if (cancelled) return;
@@ -64,12 +80,18 @@ export default function NumberRental() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [token]);
 
   // Load user's rentals
   useEffect(() => {
+    if (!token) return;
+
     let cancelled = false;
-    fetch("/api/sms-verification/rentals")
+    fetch("/api/sms-verification/rentals", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
       .then(async (r) => {
         if (!r.ok) return [];
         const data = await r.json();
@@ -86,7 +108,7 @@ export default function NumberRental() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [token]);
 
   const handleRentNumber = async () => {
     if (!selectedCountry) {
@@ -101,7 +123,10 @@ export default function NumberRental() {
     try {
       const response = await fetch("/api/sms-verification/rent-number", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
           country: selectedCountry,
         }),
@@ -114,7 +139,11 @@ export default function NumberRental() {
 
       setMessage("Number rented successfully!");
       // Refresh rentals list
-      const rentalsResponse = await fetch("/api/sms-verification/rentals");
+      const rentalsResponse = await fetch("/api/sms-verification/rentals", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
       if (rentalsResponse.ok) {
         const rentalsData = await rentalsResponse.json();
         setRentals(rentalsData.rentals || []);
