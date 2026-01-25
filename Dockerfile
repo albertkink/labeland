@@ -33,13 +33,14 @@ ENV API_PORT=5174
 # For Docker Compose: uses DB_* variables (defaults to 'postgres' service)
 # For Railway: Railway automatically provides DATABASE_URL or PGHOST/PGPORT/etc.
 # Railway private networking: Uses postgres.railway.internal when available
-ENV DB_HOST=postgres.railway.internal
-ENV DB_PORT=45167
-ENV DB_NAME=postgres
+ENV DB_HOST=postgres
+ENV DB_PORT=5432
+ENV DB_NAME=labelz
 ENV DB_USER=postgres
 ENV DB_PASSWORD=postgres
 
 # Install only production dependencies
+# Ensure package-lock.json is present for consistent installs
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev && npm cache clean --force
 
