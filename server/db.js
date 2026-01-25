@@ -62,11 +62,11 @@ if (process.env.DATABASE_URL) {
   // Never throw errors at initialization - let the connection attempt handle failures
   // Defaults to localhost for local development
   poolConfig = {
-    host: host || "postgres",
+    host: host || "localhost",
     port: Number(port || "5432"),
-    database: database || "postgres",
+    database: database || "labelz",
     user: user || "postgres",
-    password: password || "yfbWjCECKDkGuHsozmfHywDlCbXiltHF",
+    password: password || "postgres",
     // Connection pool settings
     max: 20, // Maximum number of clients in the pool
     idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
@@ -128,6 +128,14 @@ export const initDatabase = async (maxRetries = 15, retryDelay = 3000) => {
 
           CREATE INDEX IF NOT EXISTS idx_users_username ON users(LOWER(username));
           CREATE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL;
+
+          CREATE TABLE IF NOT EXISTS bug_fix_blog (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            title VARCHAR(500) NOT NULL,
+            content TEXT NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+          );
         `);
         console.log("✅ Database initialized successfully");
         return;
@@ -452,5 +460,106 @@ export const closePool = async () => {
   await pool.end();
 };
 
-export default pool;
+// --- Bug Fix Blog ---
+export const getAllBlogPosts = async () => {
+  try {
+    const result = await pool.query(
+      `SELECT id, title, content, created_at as "createdAt", updated_at as "updatedAt"
+       FROM bug_fix_blog ORDER BY updated_at DESC`
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      content: row.content,
+      createdAt: row.createdAt?.toISOString?.(),
+      updatedAt: row.updatedAt?.toISOString?.(),
+    }));
+  } catch (err) {
+    console.error("Error getting blog posts:", err);
+    throw err;
+  }
+};
 
+export const getBlogPostById = async (id) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, title, content, created_at as "createdAt", updated_at as "updatedAt"
+       FROM bug_fix_blog WHERE id = $1`,
+      [id]
+    );
+    if (result.rows.length === 0) return null;
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      title: row.title,
+      content: row.content,
+      createdAt: row.createdAt?.toISOString?.(),
+      updatedAt: row.updatedAt?.toISOString?.(),
+    };
+  } catch (err) {
+    console.error("Error getting blog post:", err);
+    throw err;
+  }
+};
+
+export const createBlogPost = async (data) => {
+  try {
+    const { id, title, content } = data;
+    const result = await pool.query(
+      `INSERT INTO bug_fix_blog (id, title, content)
+       VALUES ($1, $2, $3)
+       RETURNING id, title, content, created_at as "createdAt", updated_at as "updatedAt"`,
+      [id, title, content]
+    );
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      title: row.title,
+      content: row.content,
+      createdAt: row.createdAt?.toISOString?.(),
+      updatedAt: row.updatedAt?.toISOString?.(),
+    };
+  } catch (err) {
+    console.error("Error creating blog post:", err);
+    throw err;
+  }
+};
+
+export const updateBlogPost = async (id, updates) => {
+  try {
+    const { title, content } = updates;
+    const result = await pool.query(
+      `UPDATE bug_fix_blog SET title = $1, content = $2, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $3
+       RETURNING id, title, content, created_at as "createdAt", updated_at as "updatedAt"`,
+      [title, content, id]
+    );
+    if (result.rows.length === 0) return null;
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      title: row.title,
+      content: row.content,
+      createdAt: row.createdAt?.toISOString?.(),
+      updatedAt: row.updatedAt?.toISOString?.(),
+    };
+  } catch (err) {
+    console.error("Error updating blog post:", err);
+    throw err;
+  }
+};
+
+export const deleteBlogPost = async (id) => {
+  try {
+    const result = await pool.query(
+      `DELETE FROM bug_fix_blog WHERE id = $1 RETURNING id`,
+      [id]
+    );
+    return result.rows.length > 0;
+  } catch (err) {
+    console.error("Error deleting blog post:", err);
+    throw err;
+  }
+};
+
+export default pool;
