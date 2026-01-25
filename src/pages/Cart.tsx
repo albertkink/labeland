@@ -18,6 +18,8 @@ export default function Cart() {
   const [creditError, setCreditError] = useState<string | null>(null);
   const [creditMessage, setCreditMessage] = useState<string | null>(null);
   const [topupAmount, setTopupAmount] = useState<string>("");
+  const [email, setEmail] = useState<string>("");
+  const [emailError, setEmailError] = useState<string | null>(null);
 
   const refreshBalance = async () => {
     if (!isAuthed) return;
@@ -110,24 +112,51 @@ export default function Cart() {
     }
   };
 
+  const validateEmail = (email: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
   const handlePayWithCredits = async () => {
     setCreditMessage(null);
     setCreditError(null);
+    setEmailError(null);
+    
     if (!isAuthed) {
       setCreditError("Please sign in to pay with credits.");
       return;
     }
     if (items.length === 0) return;
 
+    // Check if there are account items that require email
+    const hasAccountItems = items.some((item) => item.kind === "account");
+    if (hasAccountItems) {
+      const trimmedEmail = email.trim();
+      if (!trimmedEmail) {
+        setEmailError("Email is required for account purchases.");
+        return;
+      }
+      if (!validateEmail(trimmedEmail)) {
+        setEmailError("Please enter a valid email address.");
+        return;
+      }
+    }
+
     setIsCheckingOut(true);
     try {
+      const requestBody: { items: typeof items; email?: string } = { items };
+      const hasAccountItems = items.some((item) => item.kind === "account");
+      if (hasAccountItems && email.trim()) {
+        requestBody.email = email.trim();
+      }
+
       const r = await fetch("/api/wallet/pay", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ items }),
+        body: JSON.stringify(requestBody),
       });
       const raw = await r.text();
       let data: unknown = null;
@@ -298,6 +327,38 @@ export default function Cart() {
                 {checkoutError}
               </div>
             ) : null}
+
+            {/* Email input for account purchases */}
+            {items.some((item) => item.kind === "account") && (
+              <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-white/[0.05] dark:bg-white/[0.03]">
+                <div className="space-y-3">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">
+                      Email Address <span className="text-error-500">*</span>
+                    </label>
+                    <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
+                      Enter your email address to receive account information after purchase.
+                    </p>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        setEmailError(null);
+                      }}
+                      placeholder="your.email@example.com"
+                      className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                      disabled={isCheckingOut}
+                    />
+                    {emailError ? (
+                      <div className="mt-2 text-xs text-error-700 dark:text-error-400">
+                        {emailError}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
               <Button
