@@ -194,7 +194,7 @@ export default function AccountsStore() {
   return (
     <div>
       <PageMeta
-        title="Accounts Store | Labelz"
+        title="Accounts Store | Label Land"
         description="Browse shipping accounts for purchase."
       />
       <PageBreadcrumb pageTitle="Account Store" />
