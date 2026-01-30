@@ -91,6 +91,7 @@ export default function AdminDashboard() {
   }>({ open: false, labelId: null, reason: "" });
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [doneModalFiles, setDoneModalFiles] = useState<File[]>([]);
 
   const [pdfMergeFiles, setPdfMergeFiles] = useState<File[]>([]);
   const [pdfMergeMerging, setPdfMergeMerging] = useState(false);
@@ -342,6 +343,7 @@ export default function AdminDashboard() {
     setDoneModal({ open: true, labelId });
     setError(null);
     setInfo(null);
+    setDoneModalFiles([]);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
   const closeDoneModal = () => setDoneModal({ open: false, labelId: null });
@@ -353,11 +355,16 @@ export default function AdminDashboard() {
   const closeDeclineModal = () =>
     setDeclineModal({ open: false, labelId: null, reason: "" });
 
+  const handleDoneFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    setDoneModalFiles(files ? Array.from(files) : []);
+  };
+
   const handleDoneSubmit = async () => {
     const labelId = doneModal.labelId;
     if (!labelId || !token) return;
-    const files = fileInputRef.current?.files;
-    if (!files || files.length === 0) {
+    const files = doneModalFiles.length > 0 ? doneModalFiles : (fileInputRef.current?.files ? Array.from(fileInputRef.current.files) : []);
+    if (files.length === 0) {
       setError("Select at least one file to upload.");
       return;
     }
@@ -389,6 +396,7 @@ export default function AdminDashboard() {
         throw new Error(msg);
       }
       setInfo("Label marked as done. Files uploaded.");
+      setDoneModalFiles([]);
       closeDoneModal();
       await refreshLabels();
     } catch (e) {
@@ -446,11 +454,11 @@ export default function AdminDashboard() {
         const src = await PDFDocument.load(bytes);
         const pageCount = src.getPageCount();
         const pageIndices = Array.from({ length: pageCount }, (_, i) => i);
-        const [copiedPages] = await mergedPdf.copyPages(src, pageIndices);
-        copiedPages.forEach((page) => mergedPdf.addPage(page));
+        const copiedPages = await mergedPdf.copyPages(src, pageIndices);
+        for (const page of copiedPages) mergedPdf.addPage(page);
       }
       const mergedBytes = await mergedPdf.save();
-      const blob = new Blob([mergedBytes], { type: "application/pdf" });
+      const blob = new Blob([new Uint8Array(mergedBytes)], { type: "application/pdf" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -623,14 +631,15 @@ export default function AdminDashboard() {
           >
             <div className="space-y-4">
               <div>
-                <Label>PDF files</Label>
+                <Label htmlFor="pdf-merge-files">PDF files</Label>
                 <input
+                  id="pdf-merge-files"
                   ref={pdfMergeInputRef}
                   type="file"
                   multiple
                   accept="application/pdf"
                   onChange={handlePdfMergeFileChange}
-                  className="mt-2 block w-full text-sm text-gray-600 dark:text-gray-400 file:mr-4 file:rounded-lg file:border-0 file:bg-brand-500 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white file:hover:bg-brand-600"
+                  className="mt-2 block w-full cursor-pointer text-sm text-gray-600 dark:text-gray-400 file:mr-4 file:cursor-pointer file:rounded-lg file:border-0 file:bg-brand-500 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white file:hover:bg-brand-600"
                 />
               </div>
               {pdfMergeFiles.length > 0 && (
@@ -879,20 +888,32 @@ export default function AdminDashboard() {
           Upload all files the user will download for this label.
         </p>
         <div className="mt-4">
-          <Label>Files</Label>
+          <Label htmlFor="done-upload-files">Files</Label>
           <input
+            id="done-upload-files"
             ref={fileInputRef}
             type="file"
             multiple
-            className="mt-2 block w-full text-sm text-gray-600 dark:text-gray-400 file:mr-4 file:rounded-lg file:border-0 file:bg-brand-500 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white file:hover:bg-brand-600"
+            onChange={handleDoneFileChange}
+            className="mt-2 block w-full cursor-pointer text-sm text-gray-600 dark:text-gray-400 file:mr-4 file:cursor-pointer file:rounded-lg file:border-0 file:bg-brand-500 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white file:hover:bg-brand-600"
             accept="*/*"
           />
+          {doneModalFiles.length > 0 && (
+            <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+              {doneModalFiles.length} file(s) selected:{" "}
+              {doneModalFiles.map((f) => f.name).join(", ")}
+            </p>
+          )}
         </div>
         <div className="mt-6 flex justify-end gap-2">
           <Button variant="outline" onClick={closeDoneModal} disabled={uploading}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={() => void handleDoneSubmit()} disabled={uploading}>
+          <Button
+            variant="primary"
+            onClick={() => void handleDoneSubmit()}
+            disabled={uploading || doneModalFiles.length === 0}
+          >
             {uploading ? "Uploading…" : "Upload & mark done"}
           </Button>
         </div>
