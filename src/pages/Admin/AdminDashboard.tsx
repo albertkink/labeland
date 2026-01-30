@@ -15,6 +15,7 @@ import {
   TableRow,
 } from "../../components/ui/table";
 import { Modal } from "../../components/ui/modal";
+import { PDFDocument } from "pdf-lib";
 
 type BlogPost = {
   id: string;
@@ -90,6 +91,10 @@ export default function AdminDashboard() {
   }>({ open: false, labelId: null, reason: "" });
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [pdfMergeFiles, setPdfMergeFiles] = useState<File[]>([]);
+  const [pdfMergeMerging, setPdfMergeMerging] = useState(false);
+  const pdfMergeInputRef = useRef<HTMLInputElement | null>(null);
 
   const authedFetch = async (url: string, init?: RequestInit) => {
     const r = await fetch(url, {
@@ -417,6 +422,51 @@ export default function AdminDashboard() {
     }
   };
 
+  const handlePdfMergeFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    const pdfs = Array.from(files).filter(
+      (f) => f.type === "application/pdf"
+    );
+    setPdfMergeFiles(pdfs);
+  };
+
+  const handlePdfMerge = async () => {
+    if (pdfMergeFiles.length === 0) {
+      setError("Select at least one PDF file.");
+      return;
+    }
+    setError(null);
+    setInfo(null);
+    setPdfMergeMerging(true);
+    try {
+      const mergedPdf = await PDFDocument.create();
+      for (const file of pdfMergeFiles) {
+        const bytes = await file.arrayBuffer();
+        const src = await PDFDocument.load(bytes);
+        const pageCount = src.getPageCount();
+        const pageIndices = Array.from({ length: pageCount }, (_, i) => i);
+        const [copiedPages] = await mergedPdf.copyPages(src, pageIndices);
+        copiedPages.forEach((page) => mergedPdf.addPage(page));
+      }
+      const mergedBytes = await mergedPdf.save();
+      const blob = new Blob([mergedBytes], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `label-land-docs-${pdfMergeFiles.length}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setInfo(`Merged ${pdfMergeFiles.length} PDF(s) and downloaded.`);
+      setPdfMergeFiles([]);
+      if (pdfMergeInputRef.current) pdfMergeInputRef.current.value = "";
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to merge PDFs.");
+    } finally {
+      setPdfMergeMerging(false);
+    }
+  };
+
   const labelSummary = (l: AdminLabel) => {
     const d = l.labelData as { carrier?: string; service?: string; from?: { name?: string } };
     const carrier = d?.carrier ?? "—";
@@ -427,7 +477,7 @@ export default function AdminDashboard() {
 
   return (
     <div>
-      <PageMeta title="Admin | Labelz" description="Bug fix blog admin" />
+      <PageMeta title="Admin | Label Land" description="Bug fix blog admin" />
       <PageBreadcrumb pageTitle="Admin" />
 
       {!isAuthed ? (
@@ -563,6 +613,52 @@ export default function AdminDashboard() {
                     )}
                   </TableBody>
                 </Table>
+              </div>
+            </div>
+          </ComponentCard>
+
+          <ComponentCard
+            title="Merge PDFs"
+            desc="Upload multiple PDFs to merge into one file. Downloaded as label-land-docs-{number}.pdf."
+          >
+            <div className="space-y-4">
+              <div>
+                <Label>PDF files</Label>
+                <input
+                  ref={pdfMergeInputRef}
+                  type="file"
+                  multiple
+                  accept="application/pdf"
+                  onChange={handlePdfMergeFileChange}
+                  className="mt-2 block w-full text-sm text-gray-600 dark:text-gray-400 file:mr-4 file:rounded-lg file:border-0 file:bg-brand-500 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white file:hover:bg-brand-600"
+                />
+              </div>
+              {pdfMergeFiles.length > 0 && (
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {pdfMergeFiles.length} PDF(s) selected. Merged file will be named{" "}
+                  <span className="font-medium text-gray-800 dark:text-white/90">
+                    label-land-docs-{pdfMergeFiles.length}.pdf
+                  </span>
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="primary"
+                  onClick={() => void handlePdfMerge()}
+                  disabled={pdfMergeMerging || pdfMergeFiles.length === 0}
+                >
+                  {pdfMergeMerging ? "Merging…" : "Merge & download"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setPdfMergeFiles([]);
+                    if (pdfMergeInputRef.current) pdfMergeInputRef.current.value = "";
+                  }}
+                  disabled={pdfMergeMerging}
+                >
+                  Clear
+                </Button>
               </div>
             </div>
           </ComponentCard>
